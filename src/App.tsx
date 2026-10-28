@@ -32,10 +32,66 @@ import { StockDetailModal } from './components/StockDetailModal';
 import { MultiDimensionalAnalysis } from './components/MultiDimensionalAnalysis';
 import { AIMarketAdvisorModal } from './components/AIMarketAdvisorModal';
 import { ImageExportModal, ExportTemplateType } from './components/ImageExportModal';
+import { PendingConvertibleBondsView } from './components/PendingConvertibleBondsView';
+import { QDIIQuotaView } from './components/QDIIQuotaView';
+import { MarketStockHeatmapView } from './components/MarketStockHeatmapView';
+import { IndustryValuationView } from './components/IndustryValuationView';
+import { ETFValuationView } from './components/ETFValuationView';
+import { CustomSectorsView } from './components/CustomSectorsView';
+import { ETFValuationItem } from './types/etfValuation';
+import { IndustryValuationItem } from './types/industryValuation';
+import { ChevronRight, ChevronLeft, BellRing, X, PanelRightOpen, PanelRightClose } from 'lucide-react';
 
 export default function App() {
-  // Navigation State - Default to 'fundflow' matching the user's uploaded layout image!
-  const [activeTab, setActiveTab] = useState<ActiveNavigationTab>('fundflow');
+  // Navigation State - Default to 'industry_valuation' so user's newly requested industry trend component is immediately visible
+  const getInitialTab = (): ActiveNavigationTab => {
+    try {
+      const hash = window.location.hash.replace('#', '') as ActiveNavigationTab;
+      const validTabs: ActiveNavigationTab[] = [
+        'fundflow', 'custom_sectors', 'etf_valuation', 'industry_valuation', 'heatmap',
+        'cb_pre', 'qdii', 'overview', 'quant', 'gold', 'toptraders',
+        'anomalies', 'usmarket', 'watchlist', 'stockquery', 'crawler', 'sentiment'
+      ];
+      if (hash && validTabs.includes(hash)) {
+        return hash;
+      }
+      const saved = localStorage.getItem('activeTab') as ActiveNavigationTab;
+      if (saved && validTabs.includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // fallback
+    }
+    return 'industry_valuation';
+  };
+
+  const [activeTab, setActiveTabState] = useState<ActiveNavigationTab>(getInitialTab);
+
+  const setActiveTab = (tab: ActiveNavigationTab) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem('activeTab', tab);
+      window.location.hash = tab;
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '') as ActiveNavigationTab;
+      const validTabs: ActiveNavigationTab[] = [
+        'fundflow', 'etf_valuation', 'industry_valuation', 'heatmap',
+        'cb_pre', 'qdii', 'overview', 'quant', 'gold', 'toptraders',
+        'anomalies', 'usmarket', 'watchlist', 'stockquery', 'crawler', 'sentiment'
+      ];
+      if (hash && validTabs.includes(hash)) {
+        setActiveTabState(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   // Real-time market state
   const [indices, setIndices] = useState<IndexQuote[]>(() => marketService.getIndices());
@@ -45,6 +101,21 @@ export default function App() {
   const [northbound, setNorthbound] = useState<NorthboundFlow>(() => marketService.getNorthbound());
   const [overviewData, setOverviewData] = useState<MarketOverviewData>(() => marketService.getOverviewData());
   const [watchlist, setWatchlist] = useState<WatchlistStock[]>(() => marketService.getWatchlist());
+
+  // Right Sidebar Drawer Open State (guarantees immediate slide-out reaction from right edge on ANY screen)
+  const [isRightDrawerOpen, setIsRightDrawerOpen] = useState<boolean>(false);
+
+  const toggleRightSidebar = () => {
+    setIsRightDrawerOpen(prev => !prev);
+  };
+
+  const openRightSidebar = () => {
+    setIsRightDrawerOpen(true);
+  };
+
+  const closeRightSidebar = () => {
+    setIsRightDrawerOpen(false);
+  };
 
   // Modal States
   const [selectedIndex, setSelectedIndex] = useState<IndexQuote | null>(null);
@@ -56,9 +127,47 @@ export default function App() {
   const [aiTargetSector, setAiTargetSector] = useState<string | undefined>(undefined);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [exportTemplate, setExportTemplate] = useState<ExportTemplateType>('market_overview');
+  const [exportContext, setExportContext] = useState<string>('fundflow');
+  const [exportSelectedETFs, setExportSelectedETFs] = useState<ETFValuationItem[] | undefined>(undefined);
+  const [exportSelectedIndustries, setExportSelectedIndustries] = useState<IndustryValuationItem[] | undefined>(undefined);
 
-  const handleOpenExportImage = (tpl: ExportTemplateType = 'market_overview', sector?: SectorFundFlow | null) => {
-    setExportTemplate(tpl);
+  const handleOpenExportImage = (
+    tpl?: ExportTemplateType,
+    sector?: SectorFundFlow | null,
+    context?: string,
+    selectedETFs?: ETFValuationItem[],
+    selectedIndustries?: IndustryValuationItem[]
+  ) => {
+    setExportSelectedETFs(selectedETFs);
+    setExportSelectedIndustries(selectedIndustries);
+    const targetContext = context || (
+      tpl === 'etf_valuation'
+        ? 'etf_valuation'
+        : tpl === 'industry_valuation' 
+        ? 'industry_valuation' 
+        : tpl === 'market_treemap' 
+        ? 'heatmap' 
+        : tpl === 'fundflow_panorama'
+        ? 'fundflow'
+        : tpl === 'gainers_losers' || tpl === 'market_overview'
+        ? 'overview'
+        : activeTab
+    );
+    setExportContext(targetContext);
+
+    if (tpl) {
+      setExportTemplate(tpl);
+    } else {
+      if (targetContext === 'etf_valuation') setExportTemplate('etf_valuation');
+      else if (targetContext === 'industry_valuation') setExportTemplate('industry_valuation');
+      else if (targetContext === 'heatmap') setExportTemplate('market_treemap');
+      else if (targetContext === 'fundflow') setExportTemplate('fundflow_panorama');
+      else if (targetContext === 'overview') setExportTemplate('gainers_losers');
+      else if (targetContext === 'sentiment') setExportTemplate('sentiment_ladder');
+      else if (targetContext === 'gold') setExportTemplate('gold_macro');
+      else setExportTemplate('market_overview');
+    }
+
     if (sector) {
       setSelectedSector(sector);
     }
@@ -120,7 +229,11 @@ export default function App() {
         onTabChange={(tab) => setActiveTab(tab)}
         watchlistCount={watchlist.length}
         onOpenAIDiagnosis={() => handleOpenAIDiagnosis()}
-        onOpenExportImage={() => handleOpenExportImage(activeTab === 'overview' ? 'market_overview' : 'fundflow_panorama')}
+        onOpenExportImage={(context, template) => handleOpenExportImage(
+          template,
+          null,
+          context || activeTab
+        )}
         onSelectStock={(stk) => {
           const foundAlert = alerts.find(a => a.stockCode === stk.code);
           if (foundAlert) {
@@ -129,6 +242,8 @@ export default function App() {
             handleOpenAIDiagnosis(`${stk.name}(${stk.code})`);
           }
         }}
+        isRightSidebarCollapsed={!isRightDrawerOpen}
+        onToggleRightSidebar={toggleRightSidebar}
       />
 
       {/* 2. Full-Width 8 Major A-Share Indices Real-Time Ticker Bar */}
@@ -137,9 +252,12 @@ export default function App() {
         onSelectIndex={(idx) => setSelectedIndex(idx)}
       />
 
-      {/* 3. Full-Width Main Content Viewport */}
+      {/* 3. Full-Width Main Content Viewport with Collapsible Right AnomalyAlertStream Sidebar */}
       <main className="flex-1 w-full max-w-[1780px] mx-auto px-3 sm:px-6 py-4 overflow-y-auto">
-          {/* TAB: 资金流看板 (Exact Re-layout matching the User's Image Blueprint) */}
+        <div className="flex flex-col lg:flex-row gap-5 items-start">
+          {/* Main Tab Views Content Area */}
+          <div className="flex-1 min-w-0 w-full space-y-4">
+            {/* TAB: 资金流看板 (Exact Re-layout matching the User's Image Blueprint) */}
           {activeTab === 'fundflow' && (
             <MainFundFlowBoard
               sectors={sectors}
@@ -147,8 +265,57 @@ export default function App() {
               onTabChange={(tab) => setActiveTab(tab)}
               onSelectSector={handleSelectSector}
               onOpenAIDiagnosis={handleOpenAIDiagnosis}
-              onOpenExportImage={() => handleOpenExportImage('fundflow_panorama')}
+              onOpenExportImage={() => handleOpenExportImage('fundflow_panorama', null, 'fundflow')}
             />
+          )}
+
+          {/* TAB: 自定义板块 (个性化板块创建、编辑、成分股资金流穿透与多维分析) */}
+          {activeTab === 'custom_sectors' && (
+            <div className="space-y-4 max-w-[1780px] mx-auto">
+              <CustomSectorsView
+                onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onSelectStock={(stk) => handleSelectStockFromSector(stk as any, '自定义板块')}
+                onOpenExportImage={(context, template) => handleOpenExportImage(
+                  template || 'fundflow_panorama',
+                  null,
+                  context || 'custom_sectors'
+                )}
+              />
+            </div>
+          )}
+
+          {/* TAB: ETF基金估值 (宽基/策略/行业/主题/全球 5大分类) */}
+          {activeTab === 'etf_valuation' && (
+            <div className="space-y-4 max-w-[1780px] mx-auto">
+              <ETFValuationView
+                onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onOpenReportExport={(selectedETFs) => handleOpenExportImage('etf_valuation', null, 'etf_valuation', selectedETFs)}
+              />
+            </div>
+          )}
+
+          {/* TAB: 31个行业指数估值 (申万一级市盈率百分位/极度低估到极度高估) */}
+          {activeTab === 'industry_valuation' && (
+            <div className="space-y-4 max-w-[1780px] mx-auto">
+              <IndustryValuationView
+                onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onOpenReportExport={(selectedIndustries) => handleOpenExportImage('industry_valuation', null, 'industry_valuation', undefined, selectedIndustries)}
+                onSelectSectorByName={handleSelectSectorByName}
+              />
+            </div>
+          )}
+
+          {/* TAB: 市场个股涨跌幅热力图 (全市场个股涨跌幅热力图与高清导出) */}
+          {activeTab === 'heatmap' && (
+            <div className="space-y-4 max-w-[1780px] mx-auto">
+              <MarketStockHeatmapView
+                sectors={sectors}
+                overviewData={overviewData}
+                onSelectStock={handleSelectStockFromSector}
+                onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onOpenReportExport={() => handleOpenExportImage('market_treemap', null, 'heatmap')}
+              />
+            </div>
           )}
 
           {/* TAB: 量化分析 */}
@@ -204,6 +371,7 @@ export default function App() {
               </div>
               <TopTradersView
                 onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onSelectStockByName={handleSelectSectorByName}
               />
             </div>
           )}
@@ -242,6 +410,7 @@ export default function App() {
               </div>
               <USMarketView
                 onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onNavigateToQDII={() => setActiveTab('qdii')}
               />
             </div>
           )}
@@ -305,6 +474,26 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB: 待发转债 (集思录全流程跟踪与抢权配债) */}
+          {activeTab === 'cb_pre' && (
+            <div className="max-w-[1780px] mx-auto">
+              <PendingConvertibleBondsView
+                onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onSelectStockByName={handleSelectSectorByName}
+              />
+            </div>
+          )}
+
+          {/* TAB: QDII额度监控 (纳指 & 标普500基金额度与限购全景) */}
+          {activeTab === 'qdii' && (
+            <div className="max-w-[1780px] mx-auto">
+              <QDIIQuotaView
+                onOpenAIDiagnosis={handleOpenAIDiagnosis}
+                onSelectStockByName={handleSelectSectorByName}
+              />
+            </div>
+          )}
+
           {/* TAB: 大盘总览 */}
           {activeTab === 'overview' && (
             <MarketOverviewView
@@ -312,43 +501,32 @@ export default function App() {
               overviewData={overviewData}
               onSelectSector={handleSelectSectorByName}
               onOpenAIDiagnosis={() => handleOpenAIDiagnosis('今日大盘与主力资金总览')}
-              onOpenExportImage={(tpl) => handleOpenExportImage(tpl || 'gainers_losers')}
+              onOpenExportImage={(tpl) => handleOpenExportImage(tpl || 'gainers_losers', null, 'overview')}
             />
           )}
 
           {/* TAB: 板块资金流 (Original Deep Dive Dashboard) */}
           {activeTab === 'sectors' && (
-            <div className="space-y-5 pb-12 max-w-7xl mx-auto">
+            <div className="space-y-5 pb-12 w-full">
               {/* Top 8 Indices ticker bar */}
               <IndexTickerBar
                 indices={indices}
                 onSelectIndex={(idx) => setSelectedIndex(idx)}
               />
 
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-                {/* Left / Main Section (8 cols on lg) */}
-                <div className="lg:col-span-8 space-y-5">
-                  <SectorFundFlowView
-                    sectors={sectors}
-                    onSelectSector={handleSelectSector}
-                    onOpenAIDiagnosisForSector={(secName) => handleOpenAIDiagnosis(secName)}
-                  />
+              <div className="space-y-5">
+                <SectorFundFlowView
+                  sectors={sectors}
+                  onSelectSector={handleSelectSector}
+                  onOpenAIDiagnosisForSector={(secName) => handleOpenAIDiagnosis(secName)}
+                />
 
-                  <MultiDimensionalAnalysis
-                    breadth={breadth}
-                    northbound={northbound}
-                    sectors={sectors}
-                    onSelectSectorByName={handleSelectSectorByName}
-                  />
-                </div>
-
-                {/* Right Section (4 cols on lg): Intelligent Anomaly Stock Alert Stream */}
-                <div className="lg:col-span-4 h-full">
-                  <AnomalyAlertStream
-                    alerts={alerts}
-                    onSelectAlert={handleSelectAlert}
-                  />
-                </div>
+                <MultiDimensionalAnalysis
+                  breadth={breadth}
+                  northbound={northbound}
+                  sectors={sectors}
+                  onSelectSectorByName={handleSelectSectorByName}
+                />
               </div>
             </div>
           )}
@@ -362,7 +540,89 @@ export default function App() {
               onSelectSector={handleSelectSectorByName}
             />
           )}
-        </main>
+          </div>
+        </div>
+      </main>
+
+      {/* 4. Global Fixed Floating Trigger Handle on Right Edge of Viewport */}
+      {/* Always accessible on any page, scroll position, or device width */}
+      {!isRightDrawerOpen && (
+        <div 
+          id="global-floating-right-sidebar-container"
+          className="fixed right-0 top-1/2 -translate-y-1/2 z-40 flex"
+        >
+          <button
+            id="global-floating-right-sidebar-btn"
+            onClick={openRightSidebar}
+            className="flex flex-col items-center justify-center py-3.5 px-2 bg-gradient-to-b from-[#0b1329] via-[#111c3d] to-[#1e293b] hover:from-rose-950 hover:via-slate-900 hover:to-rose-900 text-white rounded-l-2xl shadow-2xl border-y border-l border-rose-500/50 hover:border-rose-400 cursor-pointer transition-all hover:-translate-x-1 group ring-2 ring-rose-500/20"
+            title="点击快速打开右侧智能异动预警栏 (快捷键可随时展开)"
+          >
+            <div className="relative mb-2">
+              <BellRing className="w-4 h-4 text-rose-400 group-hover:text-rose-300 animate-bounce" />
+              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-slate-900 animate-ping" />
+            </div>
+            <span className="text-[11px] font-black [writing-mode:vertical-lr] tracking-widest text-slate-100 group-hover:text-rose-200">
+              ⚡ 异动雷达
+            </span>
+            {alerts.length > 0 && (
+              <span className="mt-2 text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-rose-600 text-white font-bold shadow-xs">
+                {alerts.length}
+              </span>
+            )}
+            <ChevronLeft className="w-3.5 h-3.5 text-slate-400 group-hover:text-white mt-1.5 -translate-x-0.5" />
+          </button>
+        </div>
+      )}
+
+      {/* 5. Slide-Over Right Drawer (Guaranteed to open smoothly right on screen over any table/content) */}
+      {isRightDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex justify-end animate-in fade-in duration-200">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity cursor-pointer"
+            onClick={closeRightSidebar}
+            title="点击任意处关闭右侧栏"
+          />
+
+          {/* Drawer Panel */}
+          <div className="relative w-full sm:w-[420px] max-w-full bg-[#0b1329] text-slate-100 h-full shadow-2xl flex flex-col z-10 border-l border-slate-800 animate-in slide-in-from-right duration-250">
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 bg-[#111c3d]/95">
+              <div className="flex items-center space-x-2.5">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-600"></span>
+                </span>
+                <span className="font-bold text-sm text-white">智能个股异动雷达</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">
+                  LIVE ({alerts.length})
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10.5px] font-mono text-slate-400 hidden sm:inline">Esc退出</span>
+                <button
+                  onClick={closeRightSidebar}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
+                  title="关闭右侧栏 (快捷键: Esc)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-3">
+              <AnomalyAlertStream
+                alerts={alerts}
+                onSelectAlert={(alt) => {
+                  handleSelectAlert(alt);
+                  closeRightSidebar();
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
         {/* Professional Website Portal Footer */}
         <footer className="border-t border-slate-200 bg-white py-5 px-4 text-xs text-slate-500 mt-auto">
@@ -408,6 +668,7 @@ export default function App() {
 
       {isAIModalOpen && (
         <AIMarketAdvisorModal
+          isOpen={isAIModalOpen}
           targetSector={aiTargetSector}
           onClose={() => {
             setIsAIModalOpen(false);
@@ -425,6 +686,9 @@ export default function App() {
         overviewData={overviewData}
         initialSector={selectedSector}
         initialTemplate={exportTemplate}
+        currentViewContext={exportContext}
+        selectedETFs={exportSelectedETFs}
+        selectedIndustries={exportSelectedIndustries}
       />
     </div>
   );

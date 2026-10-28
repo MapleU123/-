@@ -13,7 +13,9 @@ import {
   Search,
   Server,
   Flame,
-  LayoutDashboard
+  LayoutDashboard,
+  Layers,
+  LayoutGrid
 } from 'lucide-react';
 import { ActiveNavigationTab, MarketOverviewData } from '../types/market';
 
@@ -32,6 +34,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navItems: { key: ActiveNavigationTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { key: 'fundflow', label: '资金流看板', icon: <Target className="w-4 h-4 text-rose-400" />, badge: '主视图' },
+    { key: 'heatmap', label: '个股热力图', icon: <LayoutGrid className="w-4 h-4 text-rose-400" />, badge: '高清' },
+    { key: 'cb_pre', label: '待发转债', icon: <Layers className="w-4 h-4 text-pink-400" />, badge: '抢权' },
     { key: 'overview', label: '大盘总览', icon: <LayoutDashboard className="w-4 h-4 text-blue-400" /> },
     { key: 'sectors', label: '深度板块资金', icon: <BarChart3 className="w-4 h-4 text-indigo-400" /> },
     { key: 'quant', label: '量化分析', icon: <BrainCircuit className="w-4 h-4 text-cyan-400" /> },

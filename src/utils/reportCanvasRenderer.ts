@@ -1,20 +1,55 @@
+import { SHENWAN_31_INDUSTRIES_VALUATION } from '../data/industryValuationData';
+import { IndustryValuationItem, ValuationStatus } from '../types/industryValuation';
+import { ALL_ETF_VALUATION_LIST } from '../data/etfValuationData';
+import { ETFValuationItem, ETFValuationStatus } from '../types/etfValuation';
 import { IndexQuote, SectorFundFlow, MarketOverviewData } from '../types/market';
 import { getRealtimeDateString } from './marketDateUtils';
+import { computeHierarchicalTreemap, getTreemapStockColor } from './marketTreemapLayout';
 
 export type ReportThemeMode = 'light' | 'dark' | 'classic' | 'navy';
 
+export interface USMarketItem {
+  name: string;
+  price: string;
+  change: string;
+  changePct: string;
+  isUp: boolean;
+  high?: string;
+  low?: string;
+  volume?: string;
+}
+
+export interface USStockItem {
+  code: string;
+  name: string;
+  price: string;
+  changePct: string;
+  isUp: boolean;
+  cap: string;
+  pe: string;
+  desc: string;
+}
+
 export interface CanvasExportOptions {
-  template: 'market_overview' | 'fundflow_panorama' | 'gainers_losers' | 'sector_deepdive' | 'sentiment_ladder' | 'gold_macro';
+  template: 'market_treemap' | 'industry_valuation' | 'etf_valuation' | 'market_overview' | 'fundflow_panorama' | 'gainers_losers' | 'sector_deepdive' | 'sentiment_ladder' | 'gold_macro' | 'us_market' | 'current_snapshot';
   sectors: SectorFundFlow[];
   indices: IndexQuote[];
   overviewData?: MarketOverviewData;
   selectedSector?: SectorFundFlow;
+  industryValuationData?: IndustryValuationItem[];
+  etfValuationData?: ETFValuationItem[];
+  usMarketData?: {
+    indices?: USMarketItem[];
+    techGiants?: USStockItem[];
+    chinaADRs?: USStockItem[];
+  };
   themeMode: ReportThemeMode;
   watermarkMode: 'with_watermark' | 'no_watermark';
   watermarkText: string;
   watermarkOpacity: number;
   watermarkStyle: 'grid' | 'corner' | 'both';
   todayStr?: string;
+  scale?: number;
 }
 
 // Helper: Round rectangle path
@@ -90,23 +125,39 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     todayStr = getRealtimeDateString()
   } = options;
 
-  const isPanorama = template === 'fundflow_panorama';
+  const isTreemap = template === 'market_treemap';
+  const isIndustryValuation = template === 'industry_valuation';
+  const isETFValuation = template === 'etf_valuation';
+  const isPanorama = template === 'fundflow_panorama' || template === 'current_snapshot';
   const isGainersLosers = template === 'gainers_losers';
-  const isWidescreen = isPanorama || isGainersLosers;
-  const width = isWidescreen ? 1600 : 1200;
-  const height = isWidescreen ? 960 : 1760;
+  const isUSMarket = template === 'us_market';
+  const isWidescreen = isPanorama || isGainersLosers || isUSMarket || isTreemap || isIndustryValuation || isETFValuation;
+  const width = isTreemap ? 1800 : (isIndustryValuation || isETFValuation ? 1680 : (isWidescreen ? 1600 : 1200));
+  const height = isTreemap ? 1020 : (isIndustryValuation || isETFValuation ? 1120 : (isUSMarket ? 980 : (isWidescreen ? 960 : 1760)));
+  const scale = options.scale && options.scale > 0 ? options.scale : 3.0;
 
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', {
+    alpha: false,
+    desynchronized: false
+  });
   if (!ctx) return canvas;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  if (scale !== 1.0) {
+    ctx.scale(scale, scale);
+  }
 
   // Build complete color palette according to selectable style (themeMode)
   const isDark = themeMode === 'dark';
   const isClassic = themeMode === 'classic';
   const isNavy = themeMode === 'navy';
+  const isLight = !isDark && !isNavy;
 
   // Default: 'light' (证券研报白)
   let colors = {
@@ -259,16 +310,1117 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     };
   }
 
-  const fontSans = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+  const fontSans = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
 
   // 1. Draw Canvas Background (Matches selected theme style)
   ctx.fillStyle = colors.bg;
   ctx.fillRect(0, 0, width, height);
 
   // =========================================================================
-  // TEMPLATE A: FUNDFLOW PANORAMA (Widescreen 1600x940 Bilateral Board)
+  // TEMPLATE: MARKET STOCK SQUARIFIED TREEMAP (Widescreen 1800x1020 Finviz Style)
   // =========================================================================
-  if (isPanorama) {
+  // =========================================================================
+  // TEMPLATE: 31 SHENWAN INDUSTRY VALUATION PANORAMA (1680x1120 HD Master)
+  // =========================================================================
+  if (isIndustryValuation) {
+    const valuationList: IndustryValuationItem[] = options.industryValuationData && options.industryValuationData.length > 0 
+      ? options.industryValuationData 
+      : SHENWAN_31_INDUSTRIES_VALUATION;
+
+    // 1. Top Header Bar (Y: 0 to 60)
+    const topBarBg = isDark ? '#090d16' : isNavy ? '#050a17' : isClassic ? '#f5ede0' : '#ffffff';
+    ctx.fillStyle = topBarBg;
+    ctx.fillRect(0, 0, width, 60);
+
+    ctx.strokeStyle = colors.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 60);
+    ctx.lineTo(width, 60);
+    ctx.stroke();
+
+    // App Logo Icon
+    ctx.fillStyle = '#6366f1';
+    roundRect(ctx, 25, 12, 36, 36, 10);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold 20px ${fontSans}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('31', 43, 37);
+
+    // Title
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.textMain;
+    ctx.font = `bold 20px ${fontSans}`;
+    const isSubset = valuationList.length < SHENWAN_31_INDUSTRIES_VALUATION.length;
+    const mainTitle = isSubset
+      ? `申万一级精选行业指数估值与市场表现研报 (已定制收录共 ${valuationList.length} 个行业)`
+      : '申万一级 31 个行业指数最新估值与市场表现全景';
+    ctx.fillText(mainTitle, 72, 38);
+
+    ctx.fillStyle = colors.textSec;
+    ctx.font = `500 13px ${fontSans}`;
+    const subTitle = isSubset
+      ? `统计时点：${todayStr}  •  定制精选 ${valuationList.length} 个行业配置目标  •  基于十年PE/PB历史百分位权威梯队划分`
+      : `统计时点：${todayStr}  •  基于历史10年PE分位数权威梯队划分  •  沪深北证券交易所公开数据`;
+    ctx.fillText(subTitle, isSubset ? 640 : 560, 38);
+
+    // Watermark / Clean Mode badge on top right
+    const badgeRight = width - 25;
+    if (watermarkMode === 'with_watermark' && (watermarkStyle === 'corner' || watermarkStyle === 'both')) {
+      ctx.fillStyle = isDark || isNavy ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.1)';
+      ctx.strokeStyle = isDark || isNavy ? 'rgba(99, 102, 241, 0.35)' : 'rgba(99, 102, 241, 0.25)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, badgeRight - 240, 14, 240, 32, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isDark || isNavy ? '#a5b4fc' : '#4f46e5';
+      ctx.font = `bold 12.5px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`🛡️ ${watermarkText}`, badgeRight - 120, 35);
+    } else {
+      ctx.fillStyle = colors.itemBg;
+      ctx.strokeStyle = colors.itemBorder;
+      ctx.lineWidth = 1;
+      roundRect(ctx, badgeRight - 220, 14, 220, 32, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = colors.textSec;
+      ctx.font = `bold 12.5px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('📊 申万估值官方纯净版', badgeRight - 110, 35);
+    }
+    ctx.textAlign = 'left';
+
+    // 2. Metric Explanation Strip & 5 Valuation Summary Cards (Y: 72 to 155)
+    // Summary counts by status
+    const statusCounts: Record<ValuationStatus, number> = {
+      '极度低估': 0,
+      '低估': 0,
+      '正常': 0,
+      '高估': 0,
+      '极度高估': 0
+    };
+    valuationList.forEach(item => {
+      if (statusCounts[item.status] !== undefined) {
+        statusCounts[item.status]++;
+      }
+    });
+
+    const statusConfigs: { status: ValuationStatus; range: string; color: string; bg: string; border: string }[] = [
+      { status: '极度低估', range: 'PE分位 < 10%', color: '#059669', bg: isDark ? '#062e22' : '#ecfdf5', border: isDark ? '#047857' : '#a7f3d0' },
+      { status: '低估', range: '10% ≤ PE < 30%', color: '#16a34a', bg: isDark ? '#052e16' : '#f0fdf4', border: isDark ? '#15803d' : '#bbf7d0' },
+      { status: '正常', range: '30% ≤ PE ≤ 70%', color: '#2563eb', bg: isDark ? '#172554' : '#eff6ff', border: isDark ? '#1d4ed8' : '#bfdbfe' },
+      { status: '高估', range: '70% < PE < 90%', color: '#ea580c', bg: isDark ? '#371805' : '#fff7ed', border: isDark ? '#c2410c' : '#fed7aa' },
+      { status: '极度高估', range: 'PE分位 ≥ 90%', color: '#dc2626', bg: isDark ? '#3b0d0c' : '#fef2f2', border: isDark ? '#b91c1c' : '#fecaca' }
+    ];
+
+    // Left Metric Explanation block (W: 460)
+    const expX = 25;
+    const expY = 72;
+    const expW = 480;
+    const expH = 80;
+
+    ctx.fillStyle = colors.cardBg;
+    ctx.strokeStyle = colors.cardBorder;
+    ctx.lineWidth = 1;
+    roundRect(ctx, expX, expY, expW, expH, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#6366f1';
+    ctx.font = `bold 12px ${fontSans}`;
+    ctx.fillText('💡 估值三维核心研判准则', expX + 14, expY + 22);
+
+    ctx.fillStyle = colors.textSec;
+    ctx.font = `11px ${fontSans}`;
+    ctx.fillText('• 市盈率(PE)：反映单位盈利对价，结合历史百分位排除周期波动干扰', expX + 14, expY + 41);
+    ctx.fillText('• 市净率(PB)：衡量资产定价安全边际，破净(PB<1)为重要防守边际', expX + 14, expY + 58);
+    ctx.fillText('• 股息率：现金分红回报率标尺，高股息构筑坚实安全垫与红利避险价值', expX + 14, expY + 74);
+
+    // Right: 5 status cards
+    const cardGap = 12;
+    const statCardW = Math.floor((width - 25 - expW - 20 - (statusConfigs.length - 1) * cardGap) / statusConfigs.length);
+    statusConfigs.forEach((cfg, i) => {
+      const cx = expX + expW + 18 + i * (statCardW + cardGap);
+      ctx.fillStyle = cfg.bg;
+      ctx.strokeStyle = cfg.border;
+      ctx.lineWidth = 1;
+      roundRect(ctx, cx, expY, statCardW, expH, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // Status title
+      ctx.fillStyle = cfg.color;
+      ctx.font = `bold 13px ${fontSans}`;
+      ctx.fillText(cfg.status, cx + 12, expY + 24);
+
+      // Status indicator dot
+      ctx.beginPath();
+      ctx.arc(cx + statCardW - 16, expY + 20, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Count
+      ctx.fillStyle = colors.textMain;
+      ctx.font = `bold 24px ${fontSans}`;
+      ctx.fillText(`${statusCounts[cfg.status]}`, cx + 12, expY + 55);
+
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `12px ${fontSans}`;
+      ctx.fillText('个行业', cx + 46, expY + 53);
+
+      // Subtitle
+      ctx.fillStyle = cfg.color;
+      ctx.font = `10px ${fontSans}`;
+      ctx.fillText(cfg.range, cx + 12, expY + 72);
+    });
+
+    // 3. Main Data Table (Y: 165 to 1055, 31 rows + header)
+    const tableX = 25;
+    const tableY = 165;
+    const tableW = width - 50; // 1630
+    const tableH = 890;
+
+    ctx.fillStyle = colors.cardBg;
+    ctx.strokeStyle = colors.cardBorder;
+    ctx.lineWidth = 1;
+    roundRect(ctx, tableX, tableY, tableW, tableH, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    // Table Columns Configuration
+    const cols = [
+      { key: 'rank', label: '#', w: 45, align: 'center' },
+      { key: 'code', label: '指数代码', w: 100, align: 'center' },
+      { key: 'name', label: '行业名称', w: 125, align: 'left' },
+      { key: 'status', label: '估值状态', w: 110, align: 'center' },
+      { key: 'pe', label: '最新市盈率 (PE)', w: 120, align: 'right' },
+      { key: 'pePercentile', label: 'PE历史分位', w: 190, align: 'left' },
+      { key: 'pbPercentile', label: 'PB历史分位', w: 190, align: 'left' },
+      { key: 'roe', label: 'ROE (%)', w: 90, align: 'right' },
+      { key: 'weekChange', label: '近1周涨跌', w: 100, align: 'right' },
+      { key: 'monthChange', label: '当月涨跌', w: 100, align: 'right' },
+      { key: 'dividendYield', label: '股息率 (%)', w: 95, align: 'right' },
+      { key: 'leadingStocks', label: '代表性权重龙头股', w: 345, align: 'left' }
+    ];
+
+    // Table Header Row (Y: 165 to 205)
+    const headerH = 40;
+    ctx.fillStyle = isDark ? '#111827' : isNavy ? '#0a1428' : isClassic ? '#eee2cf' : '#f8fafc';
+    roundRect(ctx, tableX, tableY, tableW, headerH, 14);
+    ctx.fill();
+
+    ctx.strokeStyle = colors.divider;
+    ctx.beginPath();
+    ctx.moveTo(tableX, tableY + headerH);
+    ctx.lineTo(tableX + tableW, tableY + headerH);
+    ctx.stroke();
+
+    let curColX = tableX;
+    ctx.fillStyle = colors.textSec;
+    ctx.font = `bold 12px ${fontSans}`;
+    cols.forEach(col => {
+      let tx = curColX + 8;
+      if (col.align === 'center') tx = curColX + col.w / 2;
+      else if (col.align === 'right') tx = curColX + col.w - 10;
+
+      ctx.textAlign = col.align as CanvasTextAlign;
+      ctx.fillText(col.label, tx, tableY + 25);
+      curColX += col.w;
+    });
+
+    // Rows (Adaptive height based on item count, fits up to 31 rows)
+    const rowCount = Math.max(1, valuationList.length);
+    const rowH = rowCount <= 8 ? 48 : rowCount <= 14 ? 38 : rowCount <= 22 ? 32 : 27;
+    const sortedValuation = [...valuationList].sort((a, b) => a.pePercentile - b.pePercentile);
+
+    sortedValuation.slice(0, 31).forEach((item, index) => {
+      const ry = tableY + headerH + index * rowH;
+      const isEven = index % 2 === 1;
+
+      // Row alternate background
+      if (isEven) {
+        ctx.fillStyle = isDark ? 'rgba(255,255,255,0.02)' : isClassic ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.015)';
+        ctx.fillRect(tableX, ry, tableW, rowH);
+      }
+
+      // Bottom row divider
+      ctx.strokeStyle = colors.gridLine;
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(tableX + 10, ry + rowH);
+      ctx.lineTo(tableX + tableW - 10, ry + rowH);
+      ctx.stroke();
+
+      let cx = tableX;
+      cols.forEach(col => {
+        ctx.textAlign = col.align as CanvasTextAlign;
+        const textY = ry + Math.round(rowH / 2) + 4.5;
+
+        if (col.key === 'rank') {
+          ctx.fillStyle = colors.textMuted;
+          ctx.font = `bold 11px ${fontSans}`;
+          ctx.fillText(`${index + 1}`, cx + col.w / 2, textY);
+        } else if (col.key === 'code') {
+          ctx.fillStyle = colors.textMuted;
+          ctx.font = `500 11px monospace`;
+          ctx.fillText(item.code, cx + col.w / 2, textY);
+        } else if (col.key === 'name') {
+          ctx.fillStyle = colors.textMain;
+          ctx.font = `bold ${rowH >= 38 ? 13.5 : 12.5}px ${fontSans}`;
+          ctx.fillText(item.name, cx + 10, textY);
+        } else if (col.key === 'status') {
+          // Status badge
+          const cfg = statusConfigs.find(c => c.status === item.status) || statusConfigs[2];
+          const badgeW = rowH >= 38 ? 74 : 68;
+          const badgeH = rowH >= 38 ? 22 : 18;
+          const bx = cx + (col.w - badgeW) / 2;
+          const by = ry + Math.round((rowH - badgeH) / 2);
+          ctx.fillStyle = cfg.bg;
+          ctx.strokeStyle = cfg.border;
+          ctx.lineWidth = 0.8;
+          roundRect(ctx, bx, by, badgeW, badgeH, 4);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = cfg.color;
+          ctx.font = `bold ${rowH >= 38 ? 11.5 : 10.5}px ${fontSans}`;
+          ctx.fillText(item.status, cx + col.w / 2, by + Math.round(badgeH / 2) + 3.5);
+        } else if (col.key === 'pe') {
+          ctx.fillStyle = colors.textMain;
+          ctx.font = `bold ${rowH >= 38 ? 13 : 12}px monospace`;
+          ctx.fillText(item.pe.toFixed(2), cx + col.w - 10, textY);
+        } else if (col.key === 'pePercentile') {
+          // PE Percentile Bar (Width: 95px) + Text
+          const barW = 95;
+          const barH = rowH >= 38 ? 10 : 8;
+          const bx = cx + 8;
+          const by = ry + Math.round((rowH - barH) / 2);
+
+          // Track
+          ctx.fillStyle = isDark ? '#1f2937' : '#e2e8f0';
+          roundRect(ctx, bx, by, barW, barH, 4);
+          ctx.fill();
+
+          // Active fill
+          const fillW = Math.min(barW, Math.max(4, (item.pePercentile / 100) * barW));
+          const cfg = statusConfigs.find(c => c.status === item.status) || statusConfigs[2];
+          ctx.fillStyle = cfg.color;
+          roundRect(ctx, bx, by, fillW, barH, 4);
+          ctx.fill();
+
+          // Percentile label
+          ctx.fillStyle = cfg.color;
+          ctx.font = `bold ${rowH >= 38 ? 12 : 11}px monospace`;
+          ctx.fillText(`${item.pePercentile.toFixed(1)}%`, bx + barW + 10, textY);
+        } else if (col.key === 'pbPercentile') {
+          // PB Percentile Bar
+          const barW = 95;
+          const barH = rowH >= 38 ? 10 : 8;
+          const bx = cx + 8;
+          const by = ry + Math.round((rowH - barH) / 2);
+
+          ctx.fillStyle = isDark ? '#1f2937' : '#e2e8f0';
+          roundRect(ctx, bx, by, barW, barH, 4);
+          ctx.fill();
+
+          const fillW = Math.min(barW, Math.max(4, (item.pbPercentile / 100) * barW));
+          const pbColor = item.pbPercentile < 20 ? '#059669' : item.pbPercentile > 80 ? '#dc2626' : '#3b82f6';
+          ctx.fillStyle = pbColor;
+          roundRect(ctx, bx, by, fillW, barH, 4);
+          ctx.fill();
+
+          ctx.fillStyle = pbColor;
+          ctx.font = `bold ${rowH >= 38 ? 12 : 11}px monospace`;
+          ctx.fillText(`${item.pbPercentile.toFixed(1)}% (PB ${item.pb.toFixed(2)})`, bx + barW + 8, textY);
+        } else if (col.key === 'roe') {
+          ctx.fillStyle = colors.textMain;
+          ctx.font = `bold ${rowH >= 38 ? 12.5 : 11.5}px monospace`;
+          ctx.fillText(`${item.roe.toFixed(2)}%`, cx + col.w - 10, textY);
+        } else if (col.key === 'weekChange') {
+          const isUp = item.weekChange >= 0;
+          ctx.fillStyle = isUp ? colors.inflowText : colors.outflowText;
+          ctx.font = `bold ${rowH >= 38 ? 12.5 : 11.5}px monospace`;
+          ctx.fillText(`${isUp ? '+' : ''}${item.weekChange.toFixed(2)}%`, cx + col.w - 10, textY);
+        } else if (col.key === 'monthChange') {
+          const isUp = item.monthChange >= 0;
+          ctx.fillStyle = isUp ? colors.inflowText : colors.outflowText;
+          ctx.font = `bold ${rowH >= 38 ? 12.5 : 11.5}px monospace`;
+          ctx.fillText(`${isUp ? '+' : ''}${item.monthChange.toFixed(2)}%`, cx + col.w - 10, textY);
+        } else if (col.key === 'dividendYield') {
+          ctx.fillStyle = item.dividendYield >= 3.0 ? '#d97706' : colors.textSec;
+          ctx.font = `bold ${rowH >= 38 ? 12.5 : 11.5}px monospace`;
+          ctx.fillText(`${item.dividendYield.toFixed(2)}%`, cx + col.w - 10, textY);
+        } else if (col.key === 'leadingStocks') {
+          ctx.fillStyle = colors.textSec;
+          ctx.font = `500 ${rowH >= 38 ? 12 : 11}px ${fontSans}`;
+          const stocksStr = item.leadingStocks.slice(0, 4).join('、');
+          ctx.fillText(stocksStr, cx + 8, textY);
+        }
+
+        cx += col.w;
+      });
+    });
+
+    // 4. Footer Strip (Y: 1065 to 1105)
+    const footerY = 1065;
+    ctx.strokeStyle = colors.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(25, footerY);
+    ctx.lineTo(width - 25, footerY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(38, footerY + 26, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = `500 12.5px ${fontSans}`;
+    const footerNotice = isSubset
+      ? `A股申万一级行业估值罗盘 · 定制精选收录共 ${valuationList.length} 个行业 · 实时行情与十年滚动分位数严密核验 · 仅供量化配置参考`
+      : 'A股申万一级31个行业估值罗盘 · 数据经交易所实时公开行情与十年历史分位数严密核验 · 仅供量化配置参考';
+    ctx.fillText(footerNotice, 52, footerY + 30);
+
+    ctx.textAlign = 'right';
+    if (watermarkMode === 'with_watermark') {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `bold 12.5px ${fontSans}`;
+      ctx.fillText(`${watermarkText} · 原创出品`, width - 30, footerY + 30);
+    } else {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `500 12.5px ${fontSans}`;
+      ctx.fillText('上海 / 深圳交易所公开行情 · 纯净无水印导出', width - 30, footerY + 30);
+    }
+    ctx.textAlign = 'left';
+  } else if (isETFValuation) {
+    // =========================================================================
+    // TEMPLATE: ETF VALUATION COMPASS (1680x1120 HD Master)
+    // =========================================================================
+    const etfList: ETFValuationItem[] = options.etfValuationData && options.etfValuationData.length > 0
+      ? options.etfValuationData
+      : ALL_ETF_VALUATION_LIST;
+
+    // 1. Top Header Bar (Y: 0 to 60)
+    const topBarBg = isDark ? '#090d16' : isNavy ? '#050a17' : isClassic ? '#f5ede0' : '#ffffff';
+    ctx.fillStyle = topBarBg;
+    ctx.fillRect(0, 0, width, 60);
+
+    ctx.strokeStyle = colors.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 60);
+    ctx.lineTo(width, 60);
+    ctx.stroke();
+
+    // App Logo Icon
+    ctx.fillStyle = '#e11d48';
+    roundRect(ctx, 25, 12, 44, 36, 10);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold 16px ${fontSans}`;
+    ctx.textAlign = 'center';
+    ctx.fillText('ETF', 47, 36);
+
+    // Title
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.textMain;
+    ctx.font = `bold 20px ${fontSans}`;
+    const isSubset = etfList.length < ALL_ETF_VALUATION_LIST.length;
+    const mainTitle = isSubset 
+      ? `精选 ETF 基金最新估值与十年分位数罗盘 (已完整收录共 ${etfList.length} 只标的)`
+      : `全市场 ETF 基金最新估值与十年分位数全景罗盘 (共 ${etfList.length} 只核心标的)`;
+    ctx.fillText(mainTitle, 80, 38);
+
+    ctx.fillStyle = colors.textSec;
+    ctx.font = `500 13px ${fontSans}`;
+    const subTitle = isSubset
+      ? `统计时点：${todayStr}  •  序号 1 至 ${etfList.length} 号重点标的全部呈列  •  交易所及基金公开行情`
+      : `统计时点：${todayStr}  •  涵盖 宽基 / 策略 / 行业 / 主题 / 全球 5大分类核心标的  •  交易所及基金公开行情`;
+    ctx.fillText(subTitle, isSubset ? 640 : 545, 38);
+
+    // Watermark / Clean Mode badge on top right
+    const badgeRight = width - 25;
+    if (watermarkMode === 'with_watermark' && (watermarkStyle === 'corner' || watermarkStyle === 'both')) {
+      ctx.fillStyle = isDark || isNavy ? 'rgba(225, 29, 72, 0.15)' : 'rgba(225, 29, 72, 0.1)';
+      ctx.strokeStyle = isDark || isNavy ? 'rgba(225, 29, 72, 0.35)' : 'rgba(225, 29, 72, 0.25)';
+      ctx.lineWidth = 1;
+      roundRect(ctx, badgeRight - 240, 14, 240, 32, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = isDark || isNavy ? '#f43f5e' : '#e11d48';
+      ctx.font = `bold 12.5px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`🛡️ ${watermarkText}`, badgeRight - 120, 35);
+    } else {
+      ctx.fillStyle = colors.itemBg;
+      ctx.strokeStyle = colors.itemBorder;
+      ctx.lineWidth = 1;
+      roundRect(ctx, badgeRight - 220, 14, 220, 32, 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = colors.textSec;
+      ctx.font = `bold 12.5px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('📊 ETF估值官方纯净版', badgeRight - 110, 35);
+    }
+    ctx.textAlign = 'left';
+
+    // 2. Metric Guide Strip (Y: 72 to 155)
+    const expX = 25;
+    const expY = 72;
+    const expW = 460;
+    const expH = 80;
+
+    ctx.fillStyle = colors.cardBg;
+    ctx.strokeStyle = colors.cardBorder;
+    ctx.lineWidth = 1;
+    roundRect(ctx, expX, expY, expW, expH, 12);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#e11d48';
+    ctx.font = `bold 12px ${fontSans}`;
+    ctx.fillText('💡 ETF 估值三维核心配置准则', expX + 14, expY + 22);
+
+    ctx.fillStyle = colors.textSec;
+    ctx.font = `11px ${fontSans}`;
+    ctx.fillText('• PE分位 (<10%极度低估 / >90%极度高估)：精准把控左侧逆向定投与高位分批止盈节奏', expX + 14, expY + 41);
+    ctx.fillText('• 市净率(PB)：衡量资产定价安全垫，低PB与破净品种防守反弹空间充分', expX + 14, expY + 58);
+    ctx.fillText('• 股息率与折溢价：高股息(>3%)构筑防御底仓，微折价交易为天然折价安全垫', expX + 14, expY + 74);
+
+    // Right: 5 status cards
+    const statusConfigs = [
+      { status: '极度低估', range: 'PE分位 < 10%', color: '#059669', bg: isDark ? '#062e22' : '#ecfdf5', border: isDark ? '#047857' : '#a7f3d0' },
+      { status: '低估', range: '10% ≤ PE < 30%', color: '#16a34a', bg: isDark ? '#052e16' : '#f0fdf4', border: isDark ? '#15803d' : '#bbf7d0' },
+      { status: '正常', range: '30% ≤ PE ≤ 70%', color: '#2563eb', bg: isDark ? '#172554' : '#eff6ff', border: isDark ? '#1d4ed8' : '#bfdbfe' },
+      { status: '高估', range: '70% < PE < 90%', color: '#ea580c', bg: isDark ? '#371805' : '#fff7ed', border: isDark ? '#c2410c' : '#fed7aa' },
+      { status: '极度高估', range: 'PE分位 ≥ 90%', color: '#dc2626', bg: isDark ? '#3b0d0c' : '#fef2f2', border: isDark ? '#b91c1c' : '#fecaca' }
+    ];
+
+    const cardGap = 12;
+    const statCardW = Math.floor((width - 25 - expW - 20 - (statusConfigs.length - 1) * cardGap) / statusConfigs.length);
+    statusConfigs.forEach((cfg, i) => {
+      const cx = expX + expW + 18 + i * (statCardW + cardGap);
+      ctx.fillStyle = cfg.bg;
+      ctx.strokeStyle = cfg.border;
+      ctx.lineWidth = 1;
+      roundRect(ctx, cx, expY, statCardW, expH, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = cfg.color;
+      ctx.font = `bold 13px ${fontSans}`;
+      ctx.fillText(cfg.status, cx + 12, expY + 24);
+
+      const cnt = etfList.filter(item => item.status === cfg.status).length;
+      ctx.fillStyle = colors.textMain;
+      ctx.font = `bold 22px monospace`;
+      ctx.fillText(`${cnt}`, cx + 12, expY + 54);
+
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `10.5px ${fontSans}`;
+      ctx.fillText(cfg.range, cx + 12, expY + 70);
+    });
+
+    // 3. ETF Table (Adaptive: Single Full-Width Table if <= 26 items; Dual-Column if > 26 items)
+    const tableTop = 168;
+    const colGap = 18;
+    const isSingleColumn = etfList.length <= 26;
+
+    if (isSingleColumn) {
+      // =======================================================================
+      // SINGLE UNIFIED TABLE (e.g. 20 Strategic Funds, 8 Theme Funds, 6 Global Funds)
+      // All items are rendered sequentially in rows 1 to N without column splitting
+      // =======================================================================
+      const tableW = width - 50; // 1630px
+      const rowCount = etfList.length;
+      const rowH = rowCount <= 10 ? 46 : rowCount <= 16 ? 40 : rowCount <= 22 ? 36 : 32;
+
+      const singleColumns = [
+        { key: 'idx', label: '#', w: 42, align: 'center' },
+        { key: 'code', label: '代码', w: 75, align: 'center' },
+        { key: 'name', label: 'ETF基金名称', w: 175, align: 'left' },
+        { key: 'index', label: '标的指数', w: 165, align: 'left' },
+        { key: 'category', label: '分类', w: 65, align: 'center' },
+        { key: 'price', label: '最新价', w: 80, align: 'right' },
+        { key: 'change', label: '涨跌幅', w: 80, align: 'right' },
+        { key: 'status', label: '估值状态', w: 85, align: 'center' },
+        { key: 'pe', label: 'PE-TTM', w: 75, align: 'right' },
+        { key: 'pePercentile5y', label: '近5年PE分位', w: 115, align: 'center' },
+        { key: 'pePercentile10y', label: '近10年PE分位', w: 120, align: 'center' },
+        { key: 'pb', label: 'PB', w: 70, align: 'right' },
+        { key: 'dividend', label: '股息率', w: 75, align: 'right' },
+        { key: 'premium', label: '折溢价率', w: 75, align: 'right' },
+        { key: 'aum', label: '规模', w: 80, align: 'right' },
+        { key: 'holdings', label: '核心重仓成分股', w: 185, align: 'left' },
+        { key: 'rating', label: '量化建议', w: 68, align: 'center' }
+      ];
+
+      // Header row
+      ctx.fillStyle = isDark ? '#111a2e' : isNavy ? '#0e1b38' : isClassic ? '#eee2d0' : '#f1f5f9';
+      roundRect(ctx, 25, tableTop, tableW, 34, 6);
+      ctx.fill();
+
+      let hx = 25;
+      singleColumns.forEach(col => {
+        ctx.fillStyle = colors.textSec;
+        ctx.font = `bold 11px ${fontSans}`;
+        let tx = hx + 8;
+        if (col.align === 'center') tx = hx + col.w / 2;
+        else if (col.align === 'right') tx = hx + col.w - 8;
+        ctx.textAlign = col.align as CanvasTextAlign;
+        ctx.fillText(col.label, tx, tableTop + 22);
+        hx += col.w;
+      });
+
+      // Data rows (Rows 1 to N complete sequential listing)
+      etfList.forEach((item, rIdx) => {
+        const ry = tableTop + 36 + rIdx * rowH;
+        const isEven = rIdx % 2 === 0;
+        ctx.fillStyle = isEven ? (isDark ? '#0c1424' : isNavy ? '#0b162e' : isClassic ? '#f9f3ea' : '#ffffff') : colors.cardBg;
+        roundRect(ctx, 25, ry, tableW, rowH - 2, 4);
+        ctx.fill();
+
+        let cx = 25;
+        singleColumns.forEach(col => {
+          let tx = cx + 8;
+          if (col.align === 'center') tx = cx + col.w / 2;
+          else if (col.align === 'right') tx = cx + col.w - 8;
+          ctx.textAlign = col.align as CanvasTextAlign;
+          const textY = ry + Math.floor(rowH / 2) + 4;
+
+          if (col.key === 'idx') {
+            ctx.fillStyle = colors.textMuted;
+            ctx.font = `11.5px monospace`;
+            ctx.fillText(`${rIdx + 1}`, tx, textY);
+          } else if (col.key === 'code') {
+            ctx.fillStyle = colors.textSec;
+            ctx.font = `bold 11.5px monospace`;
+            ctx.fillText(item.code, tx, textY);
+          } else if (col.key === 'name') {
+            ctx.fillStyle = colors.textMain;
+            ctx.font = `bold 12px ${fontSans}`;
+            ctx.fillText(item.name, tx, textY);
+          } else if (col.key === 'index') {
+            ctx.fillStyle = colors.textMuted;
+            ctx.font = `11px ${fontSans}`;
+            ctx.fillText(`${item.indexName} (${item.indexCode})`, tx, textY);
+          } else if (col.key === 'category') {
+            ctx.fillStyle = item.category === 'broad' ? '#0284c7' : item.category === 'strategy' ? '#4f46e5' : item.category === 'industry' ? '#2563eb' : item.category === 'theme' ? '#9333ea' : '#d97706';
+            ctx.font = `bold 10.5px ${fontSans}`;
+            ctx.fillText(item.categoryName, tx, textY);
+          } else if (col.key === 'price') {
+            ctx.fillStyle = colors.textMain;
+            ctx.font = `bold 11.5px monospace`;
+            ctx.fillText(`¥${item.price.toFixed(3)}`, tx, textY);
+          } else if (col.key === 'change') {
+            const isUp = item.changePercent >= 0;
+            ctx.fillStyle = isUp ? colors.inflowText : colors.outflowText;
+            ctx.font = `bold 11.5px monospace`;
+            ctx.fillText(`${isUp ? '+' : ''}${item.changePercent.toFixed(2)}%`, tx, textY);
+          } else if (col.key === 'status') {
+            let badgeBg = '#ecfdf5';
+            let badgeText = '#059669';
+            if (item.status === '低估') { badgeBg = '#f0fdf4'; badgeText = '#16a34a'; }
+            else if (item.status === '正常') { badgeBg = '#eff6ff'; badgeText = '#2563eb'; }
+            else if (item.status === '高估') { badgeBg = '#fff7ed'; badgeText = '#ea580c'; }
+            else if (item.status === '极度高估') { badgeBg = '#fef2f2'; badgeText = '#dc2626'; }
+
+            roundRect(ctx, cx + 8, ry + (rowH - 22) / 2, col.w - 16, 20, 10);
+            ctx.fillStyle = isDark ? '#151f32' : badgeBg;
+            ctx.fill();
+            ctx.fillStyle = badgeText;
+            ctx.font = `bold 10.5px ${fontSans}`;
+            ctx.fillText(item.status, cx + col.w / 2, textY - 1);
+          } else if (col.key === 'pe') {
+            ctx.fillStyle = colors.textMain;
+            ctx.font = `bold 11.5px monospace`;
+            ctx.fillText(`${item.pe.toFixed(1)}`, tx, textY);
+          } else if (col.key === 'pePercentile5y') {
+            const barW = 52;
+            const barX = cx + 8;
+            const barY = ry + (rowH - 9) / 2;
+            ctx.fillStyle = isDark ? '#1e293b' : '#e2e8f0';
+            roundRect(ctx, barX, barY, barW, 9, 4.5);
+            ctx.fill();
+
+            const p5 = item.pePercentile5y;
+            const fillW = Math.min(barW, Math.max(5, (p5 / 100) * barW));
+            ctx.fillStyle = p5 < 10 ? '#059669' : p5 < 30 ? '#16a34a' : p5 <= 70 ? '#4f46e5' : p5 < 90 ? '#ea580c' : '#dc2626';
+            roundRect(ctx, barX, barY, fillW, 9, 4.5);
+            ctx.fill();
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = colors.textMain;
+            ctx.font = `bold 11px monospace`;
+            ctx.fillText(`${p5.toFixed(1)}%`, cx + col.w - 6, textY);
+          } else if (col.key === 'pePercentile10y') {
+            const barW = 55;
+            const barX = cx + 8;
+            const barY = ry + (rowH - 9) / 2;
+            ctx.fillStyle = isDark ? '#1e293b' : '#e2e8f0';
+            roundRect(ctx, barX, barY, barW, 9, 4.5);
+            ctx.fill();
+
+            const p10 = item.pePercentile10y;
+            const fillW = Math.min(barW, Math.max(5, (p10 / 100) * barW));
+            ctx.fillStyle = p10 < 10 ? '#059669' : p10 < 30 ? '#16a34a' : p10 <= 70 ? '#2563eb' : p10 < 90 ? '#ea580c' : '#dc2626';
+            roundRect(ctx, barX, barY, fillW, 9, 4.5);
+            ctx.fill();
+
+            ctx.textAlign = 'right';
+            ctx.fillStyle = colors.textMain;
+            ctx.font = `bold 11px monospace`;
+            ctx.fillText(`${p10.toFixed(1)}%`, cx + col.w - 6, textY);
+          } else if (col.key === 'pb') {
+            ctx.fillStyle = item.pb < 1.0 ? '#4f46e5' : colors.textSec;
+            ctx.font = `bold 11.5px monospace`;
+            ctx.fillText(`${item.pb.toFixed(2)}`, tx, textY);
+          } else if (col.key === 'dividend') {
+            ctx.fillStyle = item.dividendYield >= 3.0 ? '#d97706' : colors.textSec;
+            ctx.font = `bold 11.5px monospace`;
+            ctx.fillText(`${item.dividendYield.toFixed(2)}%`, tx, textY);
+          } else if (col.key === 'premium') {
+            ctx.fillStyle = item.premiumRate < 0 ? '#4f46e5' : item.premiumRate > 1.0 ? '#dc2626' : colors.textSec;
+            ctx.font = `bold 11px monospace`;
+            ctx.fillText(`${item.premiumRate > 0 ? '+' : ''}${item.premiumRate.toFixed(2)}%`, tx, textY);
+          } else if (col.key === 'aum') {
+            ctx.fillStyle = colors.textSec;
+            ctx.font = `bold 11px monospace`;
+            ctx.fillText(`${item.aum.toFixed(1)}亿`, tx, textY);
+          } else if (col.key === 'holdings') {
+            ctx.fillStyle = colors.textMuted;
+            ctx.font = `10.5px ${fontSans}`;
+            const topH = item.topHoldings.slice(0, 3).map(h => h.name).join('、');
+            ctx.fillText(topH, tx, textY);
+          } else if (col.key === 'rating') {
+            ctx.fillStyle = item.quantRating === '积极定投' ? '#059669' : item.quantRating === '适度配置' ? '#2563eb' : '#64748b';
+            ctx.font = `bold 10.5px ${fontSans}`;
+            ctx.fillText(item.quantRating, tx, textY);
+          }
+
+          cx += col.w;
+        });
+      });
+    } else {
+      // =======================================================================
+      // DUAL COLUMN TABLE (For > 26 items: e.g. 32 Industry funds, or 87 all funds)
+      // Displays items in two balanced side-by-side columns with clear column headers
+      // =======================================================================
+      const halfTableW = Math.floor((width - 50 - colGap) / 2);
+
+      const tableColumns = [
+        { key: 'idx', label: '#', w: 32, align: 'center' },
+        { key: 'code', label: '代码', w: 58, align: 'left' },
+        { key: 'name', label: 'ETF基金名称', w: 110, align: 'left' },
+        { key: 'category', label: '分类', w: 46, align: 'center' },
+        { key: 'price', label: '最新价', w: 60, align: 'right' },
+        { key: 'change', label: '涨跌幅', w: 60, align: 'right' },
+        { key: 'status', label: '估值状态', w: 68, align: 'center' },
+        { key: 'pe', label: 'PE', w: 50, align: 'right' },
+        { key: 'pePercentile5y', label: '5年分位', w: 68, align: 'right' },
+        { key: 'pePercentile10y', label: '10年分位', w: 72, align: 'right' },
+        { key: 'pb', label: 'PB', w: 48, align: 'right' },
+        { key: 'dividend', label: '股息率', w: 52, align: 'right' },
+        { key: 'rating', label: '配置建议', w: 62, align: 'center' }
+      ];
+
+      const maxDisplayCount = Math.min(etfList.length, 88);
+      const displayETFs = etfList.slice(0, maxDisplayCount);
+      const halfCount = Math.ceil(displayETFs.length / 2);
+      const leftList = displayETFs.slice(0, halfCount);
+      const rightList = displayETFs.slice(halfCount);
+      const rowH = halfCount > 35 ? 19 : halfCount > 24 ? 24 : halfCount > 18 ? 26 : 28;
+
+      const renderTableHalf = (list: ETFValuationItem[], startX: number, startIdx: number, colTitle: string) => {
+        // Header row
+        ctx.fillStyle = isDark ? '#111a2e' : isNavy ? '#0e1b38' : isClassic ? '#eee2d0' : '#f1f5f9';
+        roundRect(ctx, startX, tableTop, halfTableW, 32, 6);
+        ctx.fill();
+
+        let hx = startX;
+        tableColumns.forEach(col => {
+          ctx.fillStyle = colors.textSec;
+          ctx.font = `bold 11px ${fontSans}`;
+          let tx = hx + 6;
+          if (col.align === 'center') tx = hx + col.w / 2;
+          else if (col.align === 'right') tx = hx + col.w - 6;
+          ctx.textAlign = col.align as CanvasTextAlign;
+          
+          // Enhanced label for # column to show range
+          const labelText = col.key === 'idx' ? `${colTitle}` : col.label;
+          ctx.fillText(labelText, tx, tableTop + 20);
+          hx += col.w;
+        });
+
+        // Data rows
+        list.forEach((item, rIdx) => {
+          const ry = tableTop + 34 + rIdx * rowH;
+          const isEven = rIdx % 2 === 0;
+          ctx.fillStyle = isEven ? (isDark ? '#0c1424' : isNavy ? '#0b162e' : isClassic ? '#f9f3ea' : '#ffffff') : colors.cardBg;
+          roundRect(ctx, startX, ry, halfTableW, rowH - 2, 4);
+          ctx.fill();
+
+          let cx = startX;
+          tableColumns.forEach(col => {
+            let tx = cx + 6;
+            if (col.align === 'center') tx = cx + col.w / 2;
+            else if (col.align === 'right') tx = cx + col.w - 6;
+            ctx.textAlign = col.align as CanvasTextAlign;
+            const textY = ry + 18;
+
+            if (col.key === 'idx') {
+              ctx.fillStyle = colors.textMuted;
+              ctx.font = `11px monospace`;
+              ctx.fillText(`${startIdx + rIdx + 1}`, tx, textY);
+            } else if (col.key === 'code') {
+              ctx.fillStyle = colors.textSec;
+              ctx.font = `bold 11px monospace`;
+              ctx.fillText(item.code, tx, textY);
+            } else if (col.key === 'name') {
+              ctx.fillStyle = colors.textMain;
+              ctx.font = `bold 11.5px ${fontSans}`;
+              ctx.fillText(item.name.slice(0, 8), tx, textY);
+            } else if (col.key === 'category') {
+              ctx.fillStyle = item.category === 'broad' ? '#0284c7' : item.category === 'strategy' ? '#4f46e5' : item.category === 'industry' ? '#2563eb' : item.category === 'theme' ? '#9333ea' : '#d97706';
+              ctx.font = `bold 10px ${fontSans}`;
+              ctx.fillText(item.categoryName, tx, textY);
+            } else if (col.key === 'price') {
+              ctx.fillStyle = colors.textMain;
+              ctx.font = `bold 11px monospace`;
+              ctx.fillText(`¥${item.price.toFixed(3)}`, tx, textY);
+            } else if (col.key === 'change') {
+              const isUp = item.changePercent >= 0;
+              ctx.fillStyle = isUp ? colors.inflowText : colors.outflowText;
+              ctx.font = `bold 11px monospace`;
+              ctx.fillText(`${isUp ? '+' : ''}${item.changePercent.toFixed(2)}%`, tx, textY);
+            } else if (col.key === 'status') {
+              let badgeBg = '#ecfdf5';
+              let badgeText = '#059669';
+              if (item.status === '低估') { badgeBg = '#f0fdf4'; badgeText = '#16a34a'; }
+              else if (item.status === '正常') { badgeBg = '#eff6ff'; badgeText = '#2563eb'; }
+              else if (item.status === '高估') { badgeBg = '#fff7ed'; badgeText = '#ea580c'; }
+              else if (item.status === '极度高估') { badgeBg = '#fef2f2'; badgeText = '#dc2626'; }
+
+              roundRect(ctx, cx + 6, ry + 4, col.w - 12, 18, 9);
+              ctx.fillStyle = isDark ? '#151f32' : badgeBg;
+              ctx.fill();
+              ctx.fillStyle = badgeText;
+              ctx.font = `bold 10px ${fontSans}`;
+              ctx.fillText(item.status, cx + col.w / 2, textY - 1);
+            } else if (col.key === 'pe') {
+              ctx.fillStyle = colors.textMain;
+              ctx.font = `bold 11px monospace`;
+              ctx.fillText(`${item.pe.toFixed(1)}`, tx, textY);
+            } else if (col.key === 'pePercentile5y') {
+              const p5 = item.pePercentile5y;
+              ctx.fillStyle = p5 < 10 ? '#059669' : p5 < 30 ? '#16a34a' : p5 <= 70 ? '#4f46e5' : p5 < 90 ? '#ea580c' : '#dc2626';
+              ctx.font = `bold 10.5px monospace`;
+              ctx.fillText(`${p5.toFixed(1)}%`, tx, textY);
+            } else if (col.key === 'pePercentile10y') {
+              const p10 = item.pePercentile10y;
+              ctx.fillStyle = p10 < 10 ? '#059669' : p10 < 30 ? '#16a34a' : p10 <= 70 ? '#2563eb' : p10 < 90 ? '#ea580c' : '#dc2626';
+              ctx.font = `bold 10.5px monospace`;
+              ctx.fillText(`${p10.toFixed(1)}%`, tx, textY);
+            } else if (col.key === 'pb') {
+              ctx.fillStyle = item.pb < 1.0 ? '#4f46e5' : colors.textSec;
+              ctx.font = `bold 11px monospace`;
+              ctx.fillText(`${item.pb.toFixed(2)}`, tx, textY);
+            } else if (col.key === 'dividend') {
+              ctx.fillStyle = item.dividendYield >= 3.0 ? '#d97706' : colors.textSec;
+              ctx.font = `bold 11px monospace`;
+              ctx.fillText(`${item.dividendYield.toFixed(2)}%`, tx, textY);
+            } else if (col.key === 'rating') {
+              ctx.fillStyle = item.quantRating === '积极定投' ? '#059669' : item.quantRating === '适度配置' ? '#2563eb' : '#64748b';
+              ctx.font = `bold 10px ${fontSans}`;
+              ctx.fillText(item.quantRating, tx, textY);
+            }
+
+            cx += col.w;
+          });
+        });
+      };
+
+      renderTableHalf(leftList, 25, 0, `1-${halfCount}`);
+      if (rightList.length > 0) {
+        renderTableHalf(rightList, 25 + halfTableW + colGap, halfCount, `${halfCount + 1}-${displayETFs.length}`);
+      }
+    }
+
+    // 4. Footer Strip (Y: 1065 to 1105)
+    const footerY = 1065;
+    ctx.strokeStyle = colors.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(25, footerY);
+    ctx.lineTo(width - 25, footerY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#e11d48';
+    ctx.beginPath();
+    ctx.arc(38, footerY + 26, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = `500 12.5px ${fontSans}`;
+    ctx.fillText('全市场ETF基金估值罗盘 · 数据经交易所及基金管理人公开数据实时校准 · 涵盖宽基/策略/行业/主题/全球 · 仅供量化资产配置与定投参考', 52, footerY + 30);
+
+    ctx.textAlign = 'right';
+    if (watermarkMode === 'with_watermark') {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `bold 12.5px ${fontSans}`;
+      ctx.fillText(`${watermarkText} · 原创出品`, width - 30, footerY + 30);
+    } else {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `500 12.5px ${fontSans}`;
+      ctx.fillText('交易所公开行情 · 纯净无水印导出', width - 30, footerY + 30);
+    }
+    ctx.textAlign = 'left';
+  } else if (isTreemap) {
+    // -------------------------------------------------------------
+    // TOP STATUS & LEGEND BAR (Y: 0 to 48)
+    // -------------------------------------------------------------
+    const topBarBg = isDark ? '#090d16' : isNavy ? '#050a17' : isClassic ? '#f5ede0' : '#f8fafc';
+    ctx.fillStyle = topBarBg;
+    ctx.fillRect(0, 0, width, 48);
+
+    ctx.strokeStyle = colors.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 48);
+    ctx.lineTo(width, 48);
+    ctx.stroke();
+
+    // Top-Left: Live Indicator, Title & Timestamp
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(26, 24, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = colors.textMain;
+    ctx.font = `bold 16px ${fontSans}`;
+    ctx.fillText('A股全景板块个股涨跌树状热力图', 38, 29);
+
+    ctx.fillStyle = colors.textSec;
+    ctx.font = `12px ${fontSans}`;
+    ctx.fillText(`交易时段: ${todayStr} 15:00:00 (实盘校准)`, 285, 29);
+
+    ctx.fillStyle = isDark || isNavy ? '#38bdf8' : '#0284c7';
+    ctx.font = `bold 11.5px ${fontSans}`;
+    ctx.fillText('数据源: 52etf.site · 东方财富', 510, 29);
+
+    // Top-Right: Color Scale Legend (Finviz style gradient scale)
+    const legendItems = [
+      { label: '≤-5%', bg: isLight ? '#14532d' : '#0d4a25', text: '#ffffff' },
+      { label: '-2%', bg: isLight ? '#166534' : '#166534', text: '#ffffff' },
+      { label: '-0.2%', bg: isLight ? '#15803d' : '#1e5436', text: '#ffffff' },
+      { label: '平盘', bg: isLight ? '#64748b' : '#2e3748', text: '#ffffff' },
+      { label: '+0.2%', bg: isLight ? '#be3232' : '#882222', text: '#ffffff' },
+      { label: '+2%', bg: isLight ? '#e11d48' : '#a82424', text: '#ffffff' },
+      { label: '+5%', bg: isLight ? '#dc2626' : '#b91c1c', text: '#ffffff' },
+      { label: '≥+9.5%', bg: isLight ? '#b91c1c' : '#991b1b', text: '#ffffff' },
+    ];
+
+    let legX = width - 480;
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = `11px ${fontSans}`;
+    ctx.fillText('涨跌分布:', legX - 58, 29);
+
+    legendItems.forEach(item => {
+      ctx.fillStyle = item.bg;
+      ctx.fillRect(legX, 16, 44, 18);
+      ctx.strokeStyle = colors.divider;
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(legX, 16, 44, 18);
+
+      ctx.fillStyle = item.text;
+      ctx.font = `bold 10px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(item.label, legX + 22, 29);
+      legX += 47;
+    });
+    ctx.textAlign = 'left';
+
+    // -------------------------------------------------------------
+    // MAIN SQUARIFIED TREEMAP CONTAINER
+    // -------------------------------------------------------------
+    const treeContainer = {
+      x: 16,
+      y: 54,
+      w: width - 32,
+      h: height - 106
+    };
+
+    const sectors = computeHierarchicalTreemap(treeContainer);
+
+    // Render Sectors
+    sectors.forEach(sec => {
+      if (!sec.rect || sec.rect.w <= 0 || sec.rect.h <= 0) return;
+
+      const { x, y, w, h } = sec.rect;
+
+      // 1. Sector Outer Frame
+      ctx.strokeStyle = isDark ? '#334155' : isNavy ? '#1e3a8a' : isClassic ? '#d6c7b2' : '#cbd5e1';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+
+      // Sector headers are superimposed directly on top of stocks below!
+
+      // 3. Render Subsectors inside Sector
+      sec.subsectors.forEach(sub => {
+        if (!sub.rect || sub.rect.w <= 0 || sub.rect.h <= 0) return;
+
+        const sx = sub.rect.x;
+        const sy = sub.rect.y;
+        const sw = sub.rect.w;
+        const sh = sub.rect.h;
+
+        // Subsector outline
+        ctx.strokeStyle = isDark ? '#1e293b' : isNavy ? '#172554' : isClassic ? '#e2d5bd' : '#e2e8f0';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(sx + 0.5, sy + 0.5, sw - 1, sh - 1);
+
+        // Subsector header if space permits
+        if (sh > 45 && sw > 45) {
+          const subH = 16;
+          ctx.fillStyle = isDark ? '#0b0f19' : isNavy ? '#080d1a' : isClassic ? '#f5ede0' : '#f1f5f9';
+          ctx.fillRect(sx + 1, sy + 1, sw - 2, subH);
+
+          ctx.fillStyle = isDark || isNavy ? '#94a3b8' : '#64748b';
+          ctx.font = `bold 10px ${fontSans}`;
+          ctx.fillText(sub.name, sx + 4, sy + 12, sw - 8);
+        }
+
+        // 4. Render Stocks inside Subsector
+        sub.stocks.forEach(stk => {
+          if (!stk.rect || stk.rect.w <= 0 || stk.rect.h <= 0) return;
+
+          const { x: kx, y: ky, w: kw, h: kh } = stk.rect;
+          const color = getTreemapStockColor(stk.changePercent, themeMode);
+
+          // Tile Background
+          ctx.fillStyle = color.bg;
+          ctx.fillRect(kx, ky, kw, kh);
+
+          // Tile Border
+          ctx.strokeStyle = color.border;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(kx + 0.5, ky + 0.5, Math.max(0, kw - 1), Math.max(0, kh - 1));
+
+          // Stock Text
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const cx = kx + kw / 2;
+          const cy = ky + kh / 2;
+          const changeStr = (stk.changePercent > 0 ? '+' : '') + stk.changePercent.toFixed(2) + '%';
+
+          if (kw >= 95 && kh >= 55) {
+            // Very Large Tile (e.g. 农业银行, 工商银行, 宁德时代, 贵州茅台)
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold 20px ${fontSans}`;
+            ctx.fillText(stk.name, cx, cy - 11);
+
+            ctx.fillStyle = color.subText;
+            ctx.font = `bold 14.5px ${fontSans}`;
+            ctx.fillText(changeStr, cx, cy + 12);
+
+            if (kh >= 82) {
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+              ctx.font = `10.5px ${fontSans}`;
+              ctx.fillText(`${stk.marketCap}亿`, cx, cy + 28);
+            }
+          } else if (kw >= 56 && kh >= 34) {
+            // Medium Tile (e.g. 寒武纪, 海光信息, 北方华创, 中际旭创)
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold 13.5px ${fontSans}`;
+            ctx.fillText(stk.name, cx, cy - 8);
+
+            ctx.fillStyle = color.subText;
+            ctx.font = `bold 11px ${fontSans}`;
+            ctx.fillText(changeStr, cx, cy + 9);
+          } else if (kw >= 38 && kh >= 22) {
+            // Compact Tile
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold 11px ${fontSans}`;
+            ctx.fillText(stk.name, cx, cy - 6);
+
+            ctx.fillStyle = color.subText;
+            ctx.font = `10px ${fontSans}`;
+            ctx.fillText(changeStr, cx, cy + 7);
+          } else if (kw >= 26 && kh >= 15) {
+            // Small Tile: Name only
+            ctx.fillStyle = '#ffffff';
+            ctx.font = `bold 9.5px ${fontSans}`;
+            ctx.fillText(stk.name.slice(0, 3), cx, cy);
+          }
+        });
+      });
+
+      // SUPERIMPOSED Sector Header Badge directly over stocks
+      if (w >= 50 && h >= 32) {
+        const badgeW = Math.min(w - 8, Math.max(56, sec.name.length * 15 + 16));
+        const badgeH = 20;
+        ctx.fillStyle = isDark || isNavy ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.90)';
+        roundRect(ctx, x + 4, y + 4, badgeW, badgeH, 4);
+        ctx.fill();
+        ctx.strokeStyle = isDark || isNavy ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.22)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.fillStyle = isDark || isNavy ? '#f8fafc' : '#0f172a';
+        ctx.font = `bold 12px ${fontSans}`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(sec.name, x + 9, y + 18);
+      }
+    });
+
+    // -------------------------------------------------------------
+    // BOTTOM FOOTER STATUS & COPYRIGHT (Y: height - 42 to height)
+    // -------------------------------------------------------------
+    const footerY = height - 42;
+    ctx.strokeStyle = colors.divider;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(16, footerY);
+    ctx.lineTo(width - 16, footerY);
+    ctx.stroke();
+
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath();
+    ctx.arc(28, footerY + 22, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = colors.textMuted;
+    ctx.font = `500 13px ${fontSans}`;
+    ctx.fillText('行情状态：A股全市场板块与核心权重股等比树状热力图 · 面积代表总市值占比 · 红色为上涨 / 绿色为下跌', 42, footerY + 26);
+
+    ctx.textAlign = 'right';
+    if (watermarkMode === 'with_watermark') {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `bold 13px ${fontSans}`;
+      ctx.fillText(`${watermarkText} · 原创出品 · 机构级量化树图`, width - 20, footerY + 26);
+    } else {
+      ctx.fillStyle = colors.textMuted;
+      ctx.font = `500 13px ${fontSans}`;
+      ctx.fillText('52etf / 东方财富公开行情 · 纯净无水印导出', width - 20, footerY + 26);
+    }
+    ctx.textAlign = 'left';
+  } else if (isPanorama) {
+    // =========================================================================
+    // TEMPLATE A: FUNDFLOW PANORAMA (Widescreen 1600x940 Bilateral Board)
+    // =========================================================================
     // Top Controls Bar (Y: 20 to 65)
     // Left: [ 行业板块 ] [ 概念板块 ]
     ctx.fillStyle = colors.activeBlue;
@@ -328,10 +1480,26 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
 
     ctx.textAlign = 'left';
 
-    // Separate into Inflows and Outflows
-    const inflows = [...sectors].filter(s => (s.mainNetInflow || 0) > 0).sort((a, b) => (b.mainNetInflow || 0) - (a.mainNetInflow || 0)).slice(0, 15);
-    const outflows = [...sectors].filter(s => (s.mainNetInflow || 0) < 0).sort((a, b) => (a.mainNetInflow || 0) - (b.mainNetInflow || 0)).slice(0, 15);
+    // Separate into Inflows and Outflows - Strictly GUARANTEE TOP 10 for both sides!
+    let inflows = [...sectors].filter(s => (s.mainNetInflow || 0) > 0).sort((a, b) => (b.mainNetInflow || 0) - (a.mainNetInflow || 0)).slice(0, 10);
+    if (inflows.length < 10) {
+      const remaining = [...sectors]
+        .filter(s => !inflows.some(item => item.id === s.id))
+        .sort((a, b) => (b.mainNetInflow || 0) - (a.mainNetInflow || 0))
+        .slice(0, 10 - inflows.length);
+      inflows = [...inflows, ...remaining];
+    }
 
+    let outflows = [...sectors].filter(s => (s.mainNetInflow || 0) < 0).sort((a, b) => (a.mainNetInflow || 0) - (b.mainNetInflow || 0)).slice(0, 10);
+    if (outflows.length < 10) {
+      const remaining = [...sectors]
+        .filter(s => !outflows.some(item => item.id === s.id))
+        .sort((a, b) => (a.mainNetInflow || 0) - (b.mainNetInflow || 0))
+        .slice(0, 10 - outflows.length);
+      outflows = [...outflows, ...remaining];
+    }
+
+    const rowCount = 10;
     const cardY = 70;
     const cardH = 845;
     const cardW = 760;
@@ -339,7 +1507,7 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     const rightCardX = 815;
 
     // -------------------------------------------------------------
-    // LEFT CARD: 资金流入 TOP (RED BARS, RED BADGE, RED VALUES)
+    // LEFT CARD: 资金流入 TOP 10 (RED BARS, RED BADGE, RED VALUES)
     // -------------------------------------------------------------
     ctx.fillStyle = colors.cardBg;
     ctx.strokeStyle = colors.cardBorder;
@@ -351,7 +1519,7 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     // Left Header Title
     ctx.fillStyle = colors.textMain;
     ctx.font = `bold 19px ${fontSans}`;
-    ctx.fillText('资金流入 TOP', leftCardX + 24, cardY + 35);
+    ctx.fillText('资金流入 TOP 10', leftCardX + 24, cardY + 35);
 
     // Badge: 主力净流入 (RED THEMED)
     ctx.fillStyle = colors.inflowBadgeBg;
@@ -377,10 +1545,10 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     const maxInflowActual = Math.max(...inflows.map(s => Math.abs(s.mainNetInflow || 0)), 10);
     const inflowScale = calcAxisCeilingAndTicks(maxInflowActual);
     const ticksInflow = inflowScale.ticks;
-    const leftBarStartX = leftCardX + 140;
-    const leftBarMaxW = 460;
+    const leftBarStartX = leftCardX + 215;
+    const leftBarMaxW = 405;
     const rowStartY = cardY + 70;
-    const rowH = 48;
+    const rowH = 65;
 
     ticksInflow.forEach(tick => {
       const tx = leftBarStartX + (tick / inflowScale.ceiling) * leftBarMaxW;
@@ -388,35 +1556,61 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tx, rowStartY);
-      ctx.lineTo(tx, rowStartY + 15 * rowH);
+      ctx.lineTo(tx, rowStartY + rowCount * rowH);
       ctx.stroke();
     });
 
-    // Draw Left 15 Rows: Inflow in RED
+    // Draw Left 10 Rows: Inflow in RED with rank badges
     inflows.forEach((sec, idx) => {
       const ry = rowStartY + idx * rowH;
 
+      // Rank Badge (01-10)
+      const rankX = leftCardX + 22;
+      const rankY = ry + 14;
+      let badgeBg = isDark ? '#334155' : '#e2e8f0';
+      let badgeText = isDark ? '#94a3b8' : '#64748b';
+      if (idx === 0) {
+        badgeBg = '#e11d48';
+        badgeText = '#ffffff';
+      } else if (idx === 1) {
+        badgeBg = '#ea580c';
+        badgeText = '#ffffff';
+      } else if (idx === 2) {
+        badgeBg = '#d97706';
+        badgeText = '#ffffff';
+      }
+      ctx.fillStyle = badgeBg;
+      roundRect(ctx, rankX, rankY, 26, 22, 5);
+      ctx.fill();
+
+      ctx.fillStyle = badgeText;
+      ctx.font = `bold 12px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(idx + 1).padStart(2, '0'), rankX + 13, rankY + 16);
+      ctx.textAlign = 'left';
+
       // Sector Name
       ctx.fillStyle = colors.textMain;
-      ctx.font = `500 15px ${fontSans}`;
-      ctx.fillText(sec.name, leftCardX + 24, ry + 28);
+      ctx.font = `bold 15px ${fontSans}`;
+      ctx.fillText(sec.name, leftCardX + 58, ry + 30);
 
       // INFLOW BAR: RED!
       const val = sec.mainNetInflow || 0;
-      const barW = Math.min(leftBarMaxW, Math.max(8, (val / inflowScale.ceiling) * leftBarMaxW));
+      const barW = Math.min(leftBarMaxW, Math.max(10, (Math.abs(val) / inflowScale.ceiling) * leftBarMaxW));
 
       ctx.fillStyle = colors.inflowBar; // Solid bright RED
-      roundRect(ctx, leftBarStartX, ry + 12, barW, 22, 4);
+      roundRect(ctx, leftBarStartX, ry + 13, barW, 24, 4);
       ctx.fill();
 
       // Number text at the right of the bar (RED)
       ctx.fillStyle = colors.inflowText;
       ctx.font = `bold 14px ${fontSans}`;
-      ctx.fillText(`+${val.toFixed(2)}亿`, leftBarStartX + barW + 10, ry + 28);
+      const valFormatted = val >= 0 ? `+${val.toFixed(2)}亿` : `${val.toFixed(2)}亿`;
+      ctx.fillText(valFormatted, leftBarStartX + barW + 10, ry + 30);
     });
 
     // Left Bottom X-Axis Ticks
-    const leftAxisY = rowStartY + 15 * rowH + 18;
+    const leftAxisY = rowStartY + rowCount * rowH + 16;
     ctx.strokeStyle = colors.axisLine;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -438,7 +1632,7 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     ctx.textAlign = 'left';
 
     // -------------------------------------------------------------
-    // RIGHT CARD: 资金流出 TOP (GREEN BARS, GREEN BADGE, GREEN VALUES)
+    // RIGHT CARD: 资金流出 TOP 10 (GREEN BARS, GREEN BADGE, GREEN VALUES)
     // -------------------------------------------------------------
     ctx.fillStyle = colors.cardBg;
     ctx.strokeStyle = colors.cardBorder;
@@ -450,7 +1644,7 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     // Right Header Title
     ctx.fillStyle = colors.textMain;
     ctx.font = `bold 19px ${fontSans}`;
-    ctx.fillText('资金流出 TOP', rightCardX + 24, cardY + 35);
+    ctx.fillText('资金流出 TOP 10', rightCardX + 24, cardY + 35);
 
     // Badge: 主力净流出 (GREEN THEMED)
     ctx.fillStyle = colors.outflowBadgeBg;
@@ -477,8 +1671,8 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     const outflowScale = calcAxisCeilingAndTicks(maxOutflowActual);
     const ticksOutflow = outflowScale.ticks;
 
-    const rightBarStartX = rightCardX + 140;
-    const rightBarMaxW = 460;
+    const rightBarStartX = rightCardX + 215;
+    const rightBarMaxW = 405;
 
     ticksOutflow.forEach(tick => {
       const tx = rightBarStartX + (tick / outflowScale.ceiling) * rightBarMaxW;
@@ -486,38 +1680,62 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(tx, rowStartY);
-      ctx.lineTo(tx, rowStartY + 15 * rowH);
+      ctx.lineTo(tx, rowStartY + rowCount * rowH);
       ctx.stroke();
     });
 
-    // Draw Right 15 Rows: Outflow in GREEN, starting from LEFT (rightBarStartX) to RIGHT
-    // Bar length strictly proportional to the actual amount: (absVal / ceiling) * maxW
+    // Draw Right 10 Rows: Outflow in GREEN with rank badges
     outflows.forEach((sec, idx) => {
       const ry = rowStartY + idx * rowH;
 
+      // Rank Badge (01-10)
+      const rankX = rightCardX + 22;
+      const rankY = ry + 14;
+      let badgeBg = isDark ? '#334155' : '#e2e8f0';
+      let badgeText = isDark ? '#94a3b8' : '#64748b';
+      if (idx === 0) {
+        badgeBg = '#059669';
+        badgeText = '#ffffff';
+      } else if (idx === 1) {
+        badgeBg = '#0d9488';
+        badgeText = '#ffffff';
+      } else if (idx === 2) {
+        badgeBg = '#10b981';
+        badgeText = '#ffffff';
+      }
+      ctx.fillStyle = badgeBg;
+      roundRect(ctx, rankX, rankY, 26, 22, 5);
+      ctx.fill();
+
+      ctx.fillStyle = badgeText;
+      ctx.font = `bold 12px ${fontSans}`;
+      ctx.textAlign = 'center';
+      ctx.fillText(String(idx + 1).padStart(2, '0'), rankX + 13, rankY + 16);
+      ctx.textAlign = 'left';
+
       // Sector Name
       ctx.fillStyle = colors.textMain;
-      ctx.font = `500 15px ${fontSans}`;
-      ctx.fillText(sec.name, rightCardX + 24, ry + 28);
+      ctx.font = `bold 15px ${fontSans}`;
+      ctx.fillText(sec.name, rightCardX + 58, ry + 30);
 
       // OUTFLOW BAR: GREEN! Starts from LEFT (rightBarStartX) and extends towards RIGHT
       const absVal = Math.abs(sec.mainNetInflow || 0);
-      const barW = Math.min(rightBarMaxW, Math.max(8, (absVal / outflowScale.ceiling) * rightBarMaxW));
+      const barW = Math.min(rightBarMaxW, Math.max(10, (absVal / outflowScale.ceiling) * rightBarMaxW));
       const bx = rightBarStartX;
 
       ctx.fillStyle = colors.outflowBar; // Solid bright GREEN
-      roundRect(ctx, bx, ry + 12, barW, 22, 4);
+      roundRect(ctx, bx, ry + 13, barW, 24, 4);
       ctx.fill();
 
       // Number text at the RIGHT tip of the bar (GREEN)
       ctx.textAlign = 'left';
       ctx.fillStyle = colors.outflowText;
       ctx.font = `bold 14px ${fontSans}`;
-      ctx.fillText(`${(sec.mainNetInflow || 0).toFixed(2)}亿`, bx + barW + 10, ry + 28);
+      ctx.fillText(`${(sec.mainNetInflow || 0).toFixed(2)}亿`, bx + barW + 10, ry + 30);
     });
 
     // Right Bottom X-Axis Ticks (From Left to Right: 0, 20, 40, 60, 80...)
-    const rightAxisY = rowStartY + 15 * rowH + 18;
+    const rightAxisY = rowStartY + rowCount * rowH + 16;
     ctx.strokeStyle = colors.axisLine;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -1106,8 +2324,23 @@ export function renderReportToCanvas(options: CanvasExportOptions): HTMLCanvasEl
     const flowCardW = 534;
     const flowCardH = 540;
 
-    const topInflows = [...sectors].filter(s => (s.mainNetInflow || 0) > 0).sort((a, b) => (b.mainNetInflow || 0) - (a.mainNetInflow || 0)).slice(0, 8);
-    const topOutflows = [...sectors].filter(s => (s.mainNetInflow || 0) < 0).sort((a, b) => (a.mainNetInflow || 0) - (b.mainNetInflow || 0)).slice(0, 8);
+    let topInflows = [...sectors].filter(s => (s.mainNetInflow || 0) > 0).sort((a, b) => (b.mainNetInflow || 0) - (a.mainNetInflow || 0)).slice(0, 8);
+    if (topInflows.length < 8) {
+      const remaining = [...sectors]
+        .filter(s => !topInflows.some(item => item.id === s.id))
+        .sort((a, b) => (b.mainNetInflow || 0) - (a.mainNetInflow || 0))
+        .slice(0, 8 - topInflows.length);
+      topInflows = [...topInflows, ...remaining];
+    }
+
+    let topOutflows = [...sectors].filter(s => (s.mainNetInflow || 0) < 0).sort((a, b) => (a.mainNetInflow || 0) - (b.mainNetInflow || 0)).slice(0, 8);
+    if (topOutflows.length < 8) {
+      const remaining = [...sectors]
+        .filter(s => !topOutflows.some(item => item.id === s.id))
+        .sort((a, b) => (a.mainNetInflow || 0) - (b.mainNetInflow || 0))
+        .slice(0, 8 - topOutflows.length);
+      topOutflows = [...topOutflows, ...remaining];
+    }
 
     // Left Card: 主力净流入 TOP 8 (RED BARS, RED VALUES)
     ctx.fillStyle = colors.cardBg;

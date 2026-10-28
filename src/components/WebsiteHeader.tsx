@@ -24,7 +24,13 @@ import {
   Cpu,
   ShieldCheck,
   Building2,
-  ExternalLink
+  ExternalLink,
+  DollarSign,
+  LayoutGrid,
+  Gauge,
+  ChevronDown,
+  BellRing,
+  FolderKanban
 } from 'lucide-react';
 import { marketService } from '../services/marketService';
 import { audioAlertService } from '../utils/audioAlert';
@@ -37,8 +43,10 @@ interface WebsiteHeaderProps {
   onTabChange: (tab: ActiveNavigationTab) => void;
   watchlistCount: number;
   onOpenAIDiagnosis: () => void;
-  onOpenExportImage: () => void;
+  onOpenExportImage: (context?: string, template?: any) => void;
   onSelectStock?: (stock: { code: string; name: string }) => void;
+  isRightSidebarCollapsed?: boolean;
+  onToggleRightSidebar?: () => void;
 }
 
 export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
@@ -48,11 +56,14 @@ export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
   watchlistCount,
   onOpenAIDiagnosis,
   onOpenExportImage,
-  onSelectStock
+  onSelectStock,
+  isRightSidebarCollapsed,
+  onToggleRightSidebar
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const [liveDate, setLiveDate] = useState(() => getRealtimeDateString());
   const [liveTime, setLiveTime] = useState(() => getRealtimeTimeString());
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -62,6 +73,24 @@ export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
   const [isSimRunning, setIsSimRunning] = useState(marketService.isRunning());
   
   const searchRef = useRef<HTMLDivElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  const getTabShortName = (tab: ActiveNavigationTab) => {
+    switch (tab) {
+      case 'etf_valuation': return 'ETF基金估值';
+      case 'custom_sectors': return '自定义板块';
+      case 'industry_valuation': return '31行业估值';
+      case 'heatmap': return '个股热力图';
+      case 'fundflow': return '资金流看板';
+      case 'overview': return '大盘全景';
+      case 'sentiment': return '市场情绪';
+      case 'gold': return '黄金大宗';
+      case 'quant': return '量化选股';
+      case 'cb_pre': return '待发转债';
+      case 'qdii': return 'QDII额度';
+      default: return '研报';
+    }
+  };
 
   // Live ticking clock
   useEffect(() => {
@@ -84,11 +113,14 @@ export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
     }
   }, [searchQuery]);
 
-  // Click outside to close search
+  // Click outside to close search and export menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
         setIsSearchOpen(false);
+      }
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -99,20 +131,20 @@ export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = setInterval(() => {
-      setRefreshCountdown(prev => {
-        if (prev <= 1) {
-          return 0;
-        }
-        return prev - 1;
-      });
+      setRefreshCountdown(prev => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
     return () => clearInterval(timer);
   }, [autoRefresh]);
 
-  // When countdown hits 0, trigger refresh safely
+  // Trigger silent background refresh when countdown hits 0
   useEffect(() => {
     if (refreshCountdown === 0) {
-      handleManualRefresh();
+      setRefreshCountdown(30);
+      try {
+        marketService.triggerManualRefresh();
+      } catch {
+        // ignore
+      }
     }
   }, [refreshCountdown]);
 
@@ -138,10 +170,16 @@ export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
   // Nav items definition for professional website
   const navItems = [
     { id: 'fundflow' as ActiveNavigationTab, label: '资金流看板 (核心)', icon: BarChart2, badge: '热' },
+    { id: 'custom_sectors' as ActiveNavigationTab, label: '自定义板块', icon: FolderKanban, badge: '个性化' },
+    { id: 'etf_valuation' as ActiveNavigationTab, label: 'ETF基金估值', icon: Layers, badge: '5大类' },
+    { id: 'industry_valuation' as ActiveNavigationTab, label: '31行业估值', icon: Gauge, badge: '新' },
+    { id: 'heatmap' as ActiveNavigationTab, label: '个股热力图', icon: LayoutGrid, badge: '高清' },
+    { id: 'cb_pre' as ActiveNavigationTab, label: '待发转债', icon: Layers, badge: '抢权' },
+    { id: 'qdii' as ActiveNavigationTab, label: 'QDII额度', icon: DollarSign, badge: '纳指/标普' },
     { id: 'overview' as ActiveNavigationTab, label: '大盘全景', icon: Activity },
     { id: 'quant' as ActiveNavigationTab, label: '量化选股', icon: Cpu },
     { id: 'gold' as ActiveNavigationTab, label: '黄金大宗', icon: TrendingUp },
-    { id: 'traders' as ActiveNavigationTab, label: '实盘高手', icon: Building2 },
+    { id: 'toptraders' as ActiveNavigationTab, label: '实盘高手', icon: Building2 },
     { id: 'anomalies' as ActiveNavigationTab, label: '短线精灵', icon: Flame },
     { id: 'usmarket' as ActiveNavigationTab, label: '美股行情', icon: Globe },
     { id: 'watchlist' as ActiveNavigationTab, label: `自选股 (${watchlistCount})`, icon: Star },
@@ -314,19 +352,133 @@ export const WebsiteHeader: React.FC<WebsiteHeaderProps> = ({
             {isSimRunning ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
           </button>
 
-          {/* 📸 Prominent Export Image Button */}
-          <button
-            id="website-btn-export-image"
-            onClick={onOpenExportImage}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-red-600 via-rose-600 to-red-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs shadow-md border border-red-400/40 transition-all cursor-pointer"
-            title="导出研报图片：水平图表在上，文字在下，灰色水印防伪"
-          >
-            <Camera className="w-3.5 h-3.5 text-red-100" />
-            <span>📸 导出研报图片</span>
-            <span className="hidden lg:inline text-[10px] bg-red-800/60 px-1 rounded font-normal text-red-200">
-              灰水印
-            </span>
-          </button>
+          {/* Right Sidebar Anomaly Alert Stream Toggle */}
+          {onToggleRightSidebar && (
+            <button
+              id="website-btn-toggle-right-sidebar"
+              onClick={onToggleRightSidebar}
+              title={isRightSidebarCollapsed ? '点击展开右侧智能异动预警栏' : '点击收起右侧智能异动预警栏'}
+              className={`flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer border ${
+                !isRightSidebarCollapsed
+                  ? 'bg-rose-950/80 text-rose-300 border-rose-700/80 hover:bg-rose-900 shadow-2xs'
+                  : 'bg-[#162347] text-slate-300 border-slate-700 hover:bg-[#1d2f5e] hover:text-white'
+              }`}
+            >
+              <BellRing className={`w-3.5 h-3.5 ${!isRightSidebarCollapsed ? 'text-rose-400 animate-bounce' : 'text-slate-400'}`} />
+              <span className="flex items-center gap-1.5">
+                <span>预警雷达</span>
+                <span className={`text-[10px] px-1 py-0.2 rounded font-normal ${
+                  !isRightSidebarCollapsed ? 'bg-rose-900/80 text-rose-200' : 'bg-slate-800 text-slate-400'
+                }`}>
+                  {!isRightSidebarCollapsed ? '已显示' : '展开'}
+                </span>
+              </span>
+            </button>
+          )}
+
+          {/* 📸 Prominent Export Image Button with Sector Options Dropdown */}
+          <div className="relative" ref={exportMenuRef}>
+            <div className="flex items-center shadow-xs">
+              <button
+                id="website-btn-export-image"
+                onClick={() => onOpenExportImage(activeTab)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-l-lg bg-gradient-to-r from-red-600 via-rose-600 to-red-600 hover:from-red-500 hover:to-rose-500 text-white font-bold text-xs border border-r-0 border-red-400/40 transition-all cursor-pointer"
+                title={`快速导出当前【${getTabShortName(activeTab)}】板块研报图片`}
+              >
+                <Camera className="w-3.5 h-3.5 text-red-100" />
+                <span>📸 导出研报图片</span>
+                <span className="hidden xl:inline text-[10px] bg-red-800/60 px-1 rounded font-normal text-red-200">
+                  {getTabShortName(activeTab)}
+                </span>
+              </button>
+              <button
+                id="website-btn-export-menu"
+                type="button"
+                onClick={() => setIsExportMenuOpen(v => !v)}
+                className="px-1.5 py-1.5 rounded-r-lg bg-red-700 hover:bg-red-600 text-white border border-red-400/40 transition-all cursor-pointer flex items-center justify-center"
+                title="展开各个板块研报图片导出选项"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+
+            {/* Dropdown Menu for each sector */}
+            {isExportMenuOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-72 bg-[#0f172a] border border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden divide-y divide-slate-800 text-xs animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-2.5 bg-[#0b1329] flex items-center justify-between text-[11px] text-slate-300 font-bold border-b border-slate-800">
+                  <span className="flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-rose-400" />
+                    <span>各个板块导出研报图片选项</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-normal">独立数据源</span>
+                </div>
+
+                {/* Current Tab Quick Export */}
+                <div className="p-1 bg-slate-900/60">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsExportMenuOpen(false);
+                      onOpenExportImage(activeTab);
+                    }}
+                    className="w-full text-left p-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-rose-300 hover:text-white transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+                      <div>
+                        <div className="font-bold flex items-center gap-1">
+                          <span>快速导出当前视图</span>
+                          <span className="text-[9.5px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded font-semibold border border-rose-500/30">
+                            {getTabShortName(activeTab)}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-normal">基于当前所处视图特定数据源快照</div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                {/* Specific Sector Options */}
+                <div className="p-1 space-y-0.5 max-h-72 overflow-y-auto">
+                  {[
+                    { id: 'etf_valuation', tpl: 'etf_valuation', label: '全市场ETF基金估值全景图', desc: '宽基/策略/行业/主题/全球估值与分位', icon: Layers, color: 'text-violet-400' },
+                    { id: 'industry_valuation', tpl: 'industry_valuation', label: '31个行业估值全景图', desc: '申万一级PE/PB/ROE与历史十年分位', icon: Gauge, color: 'text-indigo-400' },
+                    { id: 'heatmap', tpl: 'market_treemap', label: '全市场板块个股热力图', desc: '52etf同款·等比矩形树状热力图', icon: LayoutGrid, color: 'text-rose-400' },
+                    { id: 'fundflow', tpl: 'fundflow_panorama', label: '行业主力资金全景图', desc: '资金流看板·TOP10多空对峙榜', icon: BarChart2, color: 'text-blue-400' },
+                    { id: 'overview', tpl: 'gainers_losers', label: '大盘全景 · 领涨与领跌榜', desc: '行业与概念领涨领跌梯队对照', icon: TrendingUp, color: 'text-emerald-400' },
+                    { id: 'overview', tpl: 'market_overview', label: 'A股大盘全景总览图', desc: '8大核心指数+两市成交量能', icon: Activity, color: 'text-cyan-400' },
+                    { id: 'sentiment', tpl: 'sentiment_ladder', label: '市场情绪与连板天梯复盘', desc: '涨跌停分布+短线情绪罗盘', icon: Flame, color: 'text-amber-400' },
+                    { id: 'gold', tpl: 'gold_macro', label: '黄金大宗与金矿联动研报', desc: '外盘现货金+A股金矿龙头联动', icon: Sparkles, color: 'text-yellow-400' },
+                  ].map((opt) => {
+                    const Icon = opt.icon;
+                    return (
+                      <button
+                        key={`${opt.id}-${opt.tpl}`}
+                        type="button"
+                        onClick={() => {
+                          setIsExportMenuOpen(false);
+                          onOpenExportImage(opt.id, opt.tpl);
+                        }}
+                        className="w-full text-left p-2 rounded-lg hover:bg-slate-800 flex items-center justify-between text-slate-200 hover:text-white transition-colors cursor-pointer group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Icon className={`w-3.5 h-3.5 ${opt.color} group-hover:scale-110 transition-transform`} />
+                          <div>
+                            <div className="font-semibold text-slate-200">{opt.label}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">{opt.desc}</div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="p-2 bg-[#0b1329] text-[10px] text-slate-500 text-center font-mono">
+                  🔒 各板块数据源严格隔离 · 禁止交叉串联
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* AI Advisor Button */}
           <button

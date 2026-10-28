@@ -1,6 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SectorFundFlow, SectorStock } from '../types/market';
-import { X, TrendingUp, TrendingDown, PieChart, Sparkles, Activity, Layers } from 'lucide-react';
+import { SectorFiveDayTrendChart } from './SectorFiveDayTrendChart';
+import { 
+  X, 
+  TrendingUp, 
+  TrendingDown, 
+  PieChart, 
+  Sparkles, 
+  Activity, 
+  Layers,
+  Calendar,
+  Clock,
+  Columns
+} from 'lucide-react';
 
 interface SectorDetailModalProps {
   sector: SectorFundFlow | null;
@@ -17,6 +29,8 @@ export const SectorDetailModal: React.FC<SectorDetailModalProps> = ({
 }) => {
   if (!sector) return null;
 
+  const [chartTab, setChartTab] = useState<'5day' | 'intraday' | 'both'>('5day');
+
   const isInflow = sector.mainNetInflow >= 0;
   const isUp = sector.changePercent >= 0;
   const flowColor = isInflow ? 'text-rose-400' : 'text-emerald-400';
@@ -29,13 +43,15 @@ export const SectorDetailModal: React.FC<SectorDetailModalProps> = ({
   const innerWidth = chartWidth - padding.left - padding.right;
   const innerHeight = chartHeight - padding.top - padding.bottom;
 
-  const inflows = sector.intradayInflowHistory.map(h => h.netInflow);
+  const intradayHistory = sector.intradayInflowHistory || [];
+  const inflows = intradayHistory.map(h => h.netInflow);
   const minFlow = Math.min(...inflows, 0);
   const maxFlow = Math.max(...inflows, 5);
   const flowRange = maxFlow - minFlow || 1;
 
-  const points = sector.intradayInflowHistory.map((h, i) => {
-    const x = padding.left + (i / (sector.intradayInflowHistory.length - 1)) * innerWidth;
+  const points = intradayHistory.map((h, i) => {
+    const denom = Math.max(1, intradayHistory.length - 1);
+    const x = padding.left + (i / denom) * innerWidth;
     const y = padding.top + innerHeight - ((h.netInflow - minFlow) / flowRange) * innerHeight;
     return `${x},${y}`;
   }).join(' ');
@@ -158,48 +174,109 @@ export const SectorDetailModal: React.FC<SectorDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Intraday Inflow Chart */}
-        <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 mb-4">
-          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>分时主力累计净流入轨迹 (亿元)</span>
-            <span className="font-mono">实时推演</span>
+        {/* Chart View Toggle Tabs: 5-Day Trend & Intraday Inflow */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 mt-1">
+          <div className="flex items-center space-x-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800">
+            <button
+              id="tab-sector-5day-trend"
+              onClick={() => setChartTab('5day')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                chartTab === '5day'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>近5日资金趋势 (持续 vs 脉冲研判)</span>
+            </button>
+
+            <button
+              id="tab-sector-intraday"
+              onClick={() => setChartTab('intraday')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                chartTab === 'intraday'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>今日分时累计流入</span>
+            </button>
+
+            <button
+              id="tab-sector-both-views"
+              onClick={() => setChartTab('both')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                chartTab === 'both'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+              title="同时展开近5日趋势与今日分时轨迹"
+            >
+              <Columns className="w-3.5 h-3.5" />
+              <span>对比</span>
+            </button>
           </div>
 
-          <div className="w-full overflow-x-auto">
-            <svg className="w-full h-36 min-w-[460px]" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
-              {/* Zero Reference Line */}
-              <line
-                x1={padding.left}
-                y1={zeroY}
-                x2={chartWidth - padding.right}
-                y2={zeroY}
-                stroke="#475569"
-                strokeDasharray="3,3"
-              />
-              <text x={padding.left - 6} y={zeroY + 4} textAnchor="end" fill="#94a3b8" fontSize="10" fontFamily="monospace">
-                0
-              </text>
-
-              <polyline
-                fill="none"
-                stroke={isInflow ? '#f43f5e' : '#10b981'}
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                points={points}
-              />
-
-              {['09:30', '10:30', '11:30', '14:00', '15:00'].map((label, idx) => {
-                const x = padding.left + (idx / 4) * innerWidth;
-                return (
-                  <text key={label} x={x} y={chartHeight - 6} textAnchor="middle" fill="#64748b" fontSize="10" fontFamily="monospace">
-                    {label}
-                  </text>
-                );
-              })}
-            </svg>
+          <div className="text-[11px] text-slate-400 hidden sm:block">
+            {chartTab === '5day' && '🌟 量化研判主力是稳步吸筹还是单日突袭脉冲'}
+            {chartTab === 'intraday' && '⏱️ 09:30 - 15:00 盘中主力分时累计曲线'}
+            {chartTab === 'both' && '📊 多周期宏观趋势与微观分时并列观察'}
           </div>
         </div>
+
+        {/* 5-Day Historical Inflow Trend Chart (持续流入 vs 脉冲研判) */}
+        {(chartTab === '5day' || chartTab === 'both') && (
+          <SectorFiveDayTrendChart sector={sector} />
+        )}
+
+        {/* Intraday Inflow Chart */}
+        {(chartTab === 'intraday' || chartTab === 'both') && (
+          <div className="p-4 rounded-xl bg-slate-950/90 border border-slate-800 mb-4">
+            <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+              <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-rose-400" />
+                分时主力累计净流入轨迹 (亿元)
+              </span>
+              <span className="font-mono text-[11px] text-slate-400">实时推演</span>
+            </div>
+
+            <div className="w-full overflow-x-auto">
+              <svg className="w-full h-36 min-w-[460px]" viewBox={`0 0 ${chartWidth} ${chartHeight}`}>
+                {/* Zero Reference Line */}
+                <line
+                  x1={padding.left}
+                  y1={zeroY}
+                  x2={chartWidth - padding.right}
+                  y2={zeroY}
+                  stroke="#475569"
+                  strokeDasharray="3,3"
+                />
+                <text x={padding.left - 6} y={zeroY + 4} textAnchor="end" fill="#94a3b8" fontSize="10" fontFamily="monospace">
+                  0
+                </text>
+
+                <polyline
+                  fill="none"
+                  stroke={isInflow ? '#f43f5e' : '#10b981'}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  points={points}
+                />
+
+                {['09:30', '10:30', '11:30', '14:00', '15:00'].map((label, idx) => {
+                  const x = padding.left + (idx / 4) * innerWidth;
+                  return (
+                    <text key={label} x={x} y={chartHeight - 6} textAnchor="middle" fill="#64748b" fontSize="10" fontFamily="monospace">
+                      {label}
+                    </text>
+                  );
+                })}
+              </svg>
+            </div>
+          </div>
+        )}
 
         {/* Constituent Stocks Flow Table */}
         <div className="mb-4">

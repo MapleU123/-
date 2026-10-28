@@ -11,8 +11,10 @@ import {
   ChevronRight,
   Flame,
   Zap,
-  Info
+  Info,
+  Scale
 } from 'lucide-react';
+import { SectorCorrelationHeatmap } from './SectorCorrelationHeatmap';
 
 interface SectorFundFlowViewProps {
   sectors: SectorFundFlow[];
@@ -21,7 +23,7 @@ interface SectorFundFlowViewProps {
 }
 
 type SortField = 'mainNetInflow' | 'mainNetRatio' | 'changePercent' | 'totalTurnover' | 'superLargeInflow';
-type ViewMode = 'table' | 'heatmap' | 'quadrant';
+type ViewMode = 'table' | 'heatmap' | 'quadrant' | 'correlation';
 
 export const SectorFundFlowView: React.FC<SectorFundFlowViewProps> = ({ 
   sectors, 
@@ -162,6 +164,16 @@ export const SectorFundFlowView: React.FC<SectorFundFlowViewProps> = ({
               }`}
             >
               <Compass className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('correlation')}
+              title="板块关联度热力图 (跨行业配置)"
+              className={`px-2 py-1 rounded text-xs transition-colors flex items-center space-x-1 ${
+                viewMode === 'correlation' ? 'bg-indigo-600 text-white font-bold' : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Scale className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">关联度</span>
             </button>
           </div>
 
@@ -489,6 +501,17 @@ export const SectorFundFlowView: React.FC<SectorFundFlowViewProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* 4. Correlation Heatmap View */}
+      {viewMode === 'correlation' && (
+        <div className="mt-4">
+          <SectorCorrelationHeatmap
+            sectors={filteredSectors}
+            onSelectSector={onSelectSector}
+            onOpenAIDiagnosis={onOpenAIDiagnosisForSector}
+          />
         </div>
       )}
     </div>

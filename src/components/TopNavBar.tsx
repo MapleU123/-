@@ -71,20 +71,20 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = setInterval(() => {
-      setRefreshCountdown(prev => {
-        if (prev <= 1) {
-          return 0;
-        }
-        return prev - 1;
-      });
+      setRefreshCountdown(prev => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
     return () => clearInterval(timer);
   }, [autoRefresh]);
 
-  // When countdown hits 0, trigger refresh safely after render
+  // Trigger silent background refresh when countdown hits 0
   useEffect(() => {
     if (refreshCountdown === 0) {
-      handleManualRefresh();
+      setRefreshCountdown(30);
+      try {
+        marketService.triggerManualRefresh();
+      } catch {
+        // ignore
+      }
     }
   }, [refreshCountdown]);
 

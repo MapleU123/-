@@ -20,7 +20,8 @@ import {
   Play,
   Camera,
   FileImage,
-  Radio
+  Radio,
+  Scale
 } from 'lucide-react';
 import { SectorFundFlow, SectorCategory, ActiveNavigationTab } from '../types/market';
 import { 
@@ -29,6 +30,7 @@ import {
   getDynamicTradingDays 
 } from '../utils/marketDateUtils';
 import { marketService } from '../services/marketService';
+import { SectorCorrelationHeatmap } from './SectorCorrelationHeatmap';
 
 interface MainFundFlowBoardProps {
   sectors: SectorFundFlow[];
@@ -54,7 +56,7 @@ export const MainFundFlowBoard: React.FC<MainFundFlowBoardProps> = ({
   const [dataDate, setDataDate] = useState<string>(() => getRealtimeDateString());
   const [historyMode, setHistoryMode] = useState<string>('realtime');
   const [fundType, setFundType] = useState<string>('main_net'); // 'main_net', 'super_large', 'large', 'medium', 'small', 'pct_change', 'turnover', 'turnover_rate'
-  const [chartType, setChartType] = useState<'bar' | 'heatmap' | 'scatter' | 'table'>('bar');
+  const [chartType, setChartType] = useState<'bar' | 'heatmap' | 'scatter' | 'table' | 'correlation'>('bar');
   const [autoRefresh, setAutoRefresh] = useState<string>('manual'); // 'manual', '5s', '10s', '30s', '60s'
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [onlyOutflow, setOnlyOutflow] = useState<boolean>(false);
@@ -73,6 +75,9 @@ export const MainFundFlowBoard: React.FC<MainFundFlowBoardProps> = ({
   // Top navigation tabs definition matching the user screenshot
   const navTabs: { key: ActiveNavigationTab; label: string }[] = [
     { key: 'fundflow', label: '资金流看板' },
+    { key: 'custom_sectors', label: '自定义板块' },
+    { key: 'heatmap', label: '个股热力图' },
+    { key: 'cb_pre', label: '待发转债' },
     { key: 'quant', label: '量化分析' },
     { key: 'gold', label: '黄金分析' },
     { key: 'toptraders', label: '实盘高手' },
@@ -163,19 +168,21 @@ export const MainFundFlowBoard: React.FC<MainFundFlowBoardProps> = ({
 
   // Find max absolute value for horizontal bar scaling
   const maxAbsValue = useMemo(() => {
-    if (processedSectors.length === 0) return 25;
-    const maxVal = Math.max(
-      ...processedSectors.map(s => {
-        switch (fundType) {
-          case 'pct_change': return Math.abs(s.changePercent || 0);
-          case 'turnover': return Math.abs(s.totalTurnover || 0);
-          case 'turnover_rate': return Math.abs(s.turnoverRate || 0);
-          case 'super_large': return Math.abs(s.superLargeInflow || 0);
-          default: return Math.abs(s.mainNetInflow || 0);
-        }
-      }),
-      5
-    );
+    if (!processedSectors || processedSectors.length === 0) return 25;
+    let maxVal = 5;
+    for (const s of processedSectors) {
+      let val = 0;
+      switch (fundType) {
+        case 'pct_change': val = Math.abs(s.changePercent || 0); break;
+        case 'turnover': val = Math.abs(s.totalTurnover || 0); break;
+        case 'turnover_rate': val = Math.abs(s.turnoverRate || 0); break;
+        case 'super_large': val = Math.abs(s.superLargeInflow || 0); break;
+        default: val = Math.abs(s.mainNetInflow || 0); break;
+      }
+      if (Number.isFinite(val) && val > maxVal) {
+        maxVal = val;
+      }
+    }
     return maxVal;
   }, [processedSectors, fundType]);
 
@@ -497,6 +504,7 @@ export const MainFundFlowBoard: React.FC<MainFundFlowBoardProps> = ({
                 className="bg-slate-50 border border-slate-200 text-slate-700 rounded-md px-2.5 py-1 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-hidden font-medium cursor-pointer"
               >
                 <option value="bar">横向条形</option>
+                <option value="correlation">板块关联度热力图 (跨行业配置)</option>
                 <option value="heatmap">资金热力图</option>
                 <option value="scatter">象限散点图</option>
                 <option value="table">资金明细表格</option>
@@ -593,6 +601,21 @@ export const MainFundFlowBoard: React.FC<MainFundFlowBoardProps> = ({
                   <span>导出研报图</span>
                 </button>
               )}
+
+              {/* 板块关联度热力图 Quick Switch Button */}
+              <button
+                id="btn-switch-correlation-toolbar"
+                onClick={() => setChartType(prev => prev === 'correlation' ? 'bar' : 'correlation')}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer flex items-center space-x-1.5 shadow-xs ${
+                  chartType === 'correlation'
+                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white ring-2 ring-indigo-400'
+                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
+                }`}
+                title="计算不同行业概念间的资金流向相关性，辅助用户进行跨行业配置分析与风险对冲"
+              >
+                <Scale className="w-3.5 h-3.5 text-indigo-500" />
+                <span>{chartType === 'correlation' ? '返回条形看板' : '板块关联度热力图 (跨行业配置)'}</span>
+              </button>
             </div>
 
             {/* Right info text */}
@@ -1056,6 +1079,15 @@ export const MainFundFlowBoard: React.FC<MainFundFlowBoardProps> = ({
               </div>
             </div>
           </section>
+        )}
+
+        {/* 10. Sector Correlation Heatmap (Cross-Industry Allocation) */}
+        {chartType === 'correlation' && (
+          <SectorCorrelationHeatmap
+            sectors={processedSectors}
+            onSelectSector={onSelectSector}
+            onOpenAIDiagnosis={onOpenAIDiagnosis}
+          />
         )}
       </div>
     </div>

@@ -9,7 +9,8 @@ import {
   AIAnalysisResult,
   AnomalyType,
   MarketOverviewData,
-  WatchlistStock
+  WatchlistStock,
+  PendingConvertibleBond
 } from '../types/market';
 import {
   initialIndices,
@@ -21,6 +22,11 @@ import {
   initialWatchlistStocks,
   searchableStockList
 } from '../data/mockMarketData';
+import {
+  INITIAL_PENDING_CONVERTIBLE_BONDS,
+  calculateCBSummary
+} from '../data/pendingConvertibleBondsData';
+import { calculateCBValuation } from '../utils/cbValuation';
 import { audioAlertService } from '../utils/audioAlert';
 import {
   getRealtimeDateString,
@@ -36,6 +42,7 @@ export class MarketDataService {
   private northbound: NorthboundFlow = JSON.parse(JSON.stringify(initialNorthbound));
   private overviewData: MarketOverviewData = JSON.parse(JSON.stringify(initialMarketOverviewData));
   private watchlist: WatchlistStock[] = JSON.parse(JSON.stringify(initialWatchlistStocks));
+  private pendingBonds: PendingConvertibleBond[] = JSON.parse(JSON.stringify(INITIAL_PENDING_CONVERTIBLE_BONDS));
   
   private liveTradingDate: string = getRealtimeDateString();
   private liveTradingTime: string = getRealtimeTimeString();
@@ -60,6 +67,23 @@ export class MarketDataService {
 
     this.startSimulation();
     this.startLiveFetch();
+
+    // Initialize pending convertible bonds with live server data
+    this.fetchPendingConvertibleBonds(false).then(data => {
+      if (data && Array.isArray(data.bonds) && data.bonds.length > 0) {
+        this.pendingBonds = data.bonds;
+        this.notify();
+      }
+    }).catch(() => {});
+  }
+
+  public getPendingBonds(): PendingConvertibleBond[] {
+    return this.pendingBonds;
+  }
+
+  public setPendingBonds(bonds: PendingConvertibleBond[]) {
+    this.pendingBonds = bonds;
+    this.notify();
   }
 
   public getLiveTradingDate(): string {
@@ -87,6 +111,7 @@ export class MarketDataService {
 
   public async fetchLiveMarketData() {
     try {
+      if (typeof window === 'undefined') return;
       const res = await fetch('/api/market/realtime-all');
       if (!res.ok) return;
       const data = await res.json();
@@ -113,6 +138,19 @@ export class MarketDataService {
             lastCollectTime: data.lastCollectTime || getRealtimeShortDateTimeString(),
             pageRefreshTime: data.pageRefreshTime || this.liveTradingTime
           };
+        }
+
+        // Also sync real-time short-term signals alerts
+        try {
+          const alertRes = await fetch('/api/market/short-term-signals');
+          if (alertRes.ok) {
+            const alertData = await alertRes.json();
+            if (alertData && alertData.success && Array.isArray(alertData.alerts) && alertData.alerts.length > 0) {
+              this.alerts = alertData.alerts;
+            }
+          }
+        } catch (e) {
+          // ignore
         }
 
         this.notify();
@@ -408,7 +446,50 @@ export class MarketDataService {
       totalTurnoverAll: Number((this.marketBreadth.totalTurnoverAll + 4.2).toFixed(1))
     };
 
-    // 7. Occasionally trigger random live anomaly
+    // 7. Tick Pending Convertible Bonds stocks & dynamically update safety cushion calculations
+    if (this.pendingBonds && this.pendingBonds.length > 0) {
+      this.pendingBonds = this.pendingBonds.map(bond => {
+        // Subtle tick: ~40% of bonds update per tick for realistic market volatility
+        if (Math.random() < 0.6) return bond;
+        const volatility = 0.0012;
+        const deltaPercent = (Math.random() - 0.49) * volatility * 100;
+        const newPrice = Number(Math.max(1.0, bond.stockPrice * (1 + deltaPercent / 100)).toFixed(2));
+        if (newPrice === bond.stockPrice) return bond;
+
+        const newChangePercent = Number((bond.stockChangePercent + deltaPercent).toFixed(2));
+        const newConvertValue = bond.convertPrice > 0
+          ? Number(((newPrice / bond.convertPrice) * 100).toFixed(2))
+          : 100;
+        const newRights100 = (bond.rationPerShare > 0 && newPrice > 0)
+          ? Number(((bond.rationPerShare / newPrice) * 100).toFixed(2))
+          : bond.rightsPer100;
+
+        const liveValuation = calculateCBValuation({
+          stockPrice: newPrice,
+          convertPrice: bond.convertPrice,
+          issueSize: bond.issueSize,
+          rating: bond.rating,
+          industry: bond.industry,
+          rightsPer100: newRights100,
+          rationPerShare: bond.rationPerShare
+        });
+
+        return {
+          ...bond,
+          stockPrice: newPrice,
+          stockChangePercent: newChangePercent,
+          convertValue: liveValuation.convertValue,
+          rightsPer100: newRights100,
+          safetyMargin: liveValuation.safetyMargin,
+          estimatedListingPrice: liveValuation.estimatedListingPrice,
+          estimatedListingGain: liveValuation.estimatedListingGain,
+          estimatedPremiumRate: liveValuation.estimatedPremiumRate,
+          valuationNote: liveValuation.valuationNote
+        };
+      });
+    }
+
+    // 8. Occasionally trigger random live anomaly
     if (Math.random() < 0.28) {
       this.generateLiveAnomaly();
     }
@@ -600,6 +681,58 @@ export class MarketDataService {
         turnoverThreshold: '两市维持2万亿以上即具备主升行情动能'
       }
     };
+  }
+
+  /**
+   * 待发可转债全流程与抢权配债数据获取
+   * @param force 是否强制后端刷新
+   */
+  public async fetchPendingConvertibleBonds(force = false): Promise<any> {
+    try {
+      const res = await fetch(`/api/market/convertible-bonds-pre?refresh=${force ? 'true' : 'false'}`);
+      if (!res.ok) throw new Error('API response not ok');
+      const data = await res.json();
+      if (data && Array.isArray(data.bonds) && data.bonds.length > 0) {
+        this.pendingBonds = data.bonds;
+        this.notify();
+      }
+      return data;
+    } catch {
+      // Offline / client fallback from INITIAL_PENDING_CONVERTIBLE_BONDS
+      const { INITIAL_PENDING_CONVERTIBLE_BONDS, calculateCBSummary } = await import('../data/pendingConvertibleBondsData');
+      const time = getRealtimeTimeString();
+      return {
+        success: true,
+        source: '集思录 (Jisilu) 本地离线备用数据',
+        updateTime: time,
+        summary: calculateCBSummary(INITIAL_PENDING_CONVERTIBLE_BONDS, time),
+        bonds: INITIAL_PENDING_CONVERTIBLE_BONDS
+      };
+    }
+  }
+
+  /**
+   * 纳斯达克与标普500基金 QDII额度与限购监控数据获取
+   * @param force 是否强制后端刷新
+   */
+  public async fetchQDIIQuotas(force = false): Promise<any> {
+    try {
+      const res = await fetch(`/api/market/qdii-quota?refresh=${force ? 'true' : 'false'}`);
+      if (!res.ok) throw new Error('API response not ok');
+      const data = await res.json();
+      return data;
+    } catch {
+      // Offline / client fallback from INITIAL_QDII_FUNDS
+      const { INITIAL_QDII_FUNDS, calculateQDIISummaryStats } = await import('../data/qdiiFundsData');
+      const time = getRealtimeTimeString();
+      return {
+        success: true,
+        source: '国家外汇管理局QDII投资额度披露 + 基金公司官方大额限购公告 (离线备用)',
+        updateTime: time,
+        summary: calculateQDIISummaryStats(INITIAL_QDII_FUNDS),
+        funds: INITIAL_QDII_FUNDS
+      };
+    }
   }
 }
 

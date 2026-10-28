@@ -4,17 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>A股板块资金流与异动预警终端</title>
-    <meta name="description" content="A股主力资金流向全景量化复盘门户网站，支持行业概念资金流双向横向对比看板、大盘全景总览、专业研报大图生成导出与灰色防伪水印" />
+    <meta name="description" content="A股主力资金流向全景量化复盘门户网站，支持行业概念资金流双向横向对比看板、市场个股涨跌幅全景热力图与高清4K/2K图片导出、板块关联度热力图与跨行业配置分析、待发可转债全流程跟踪与抢权配债(集思录标准)、纳斯达克与标普500基金QDII额度限购监控、大盘全景总览、专业研报大图生成导出与灰色防伪水印" />
     <meta property="og:title" content="A股板块资金流与异动预警终端" />
-    <meta property="og:description" content="A股主力资金流向全景量化复盘门户网站，支持行业概念资金流双向横向对比看板、大盘全景总览、专业研报大图生成导出与灰色防伪水印" />
+    <meta property="og:description" content="A股主力资金流向全景量化复盘门户网站，支持行业概念资金流双向横向对比看板、市场个股涨跌幅全景热力图与高清4K/2K图片导出、板块关联度热力图与跨行业配置分析、待发可转债全流程跟踪与抢权配债(集思录标准)、纳斯达克与标普500基金QDII额度限购监控、大盘全景总览、专业研报大图生成导出与灰色防伪水印" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" crossorigin="anonymous">
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-rose-500/30 selection:text-rose-200">
-    <div id="root"></div>
+  <body class="bg-[#f1f4f9] text-slate-800 antialiased selection:bg-rose-500/30 selection:text-rose-200">
+    <div id="root">
+      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #f1f4f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1e293b;">
+        <div style="width: 48px; height: 48px; border: 3px solid #e2e8f0; border-top-color: #dc2626; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px;"></div>
+        <div style="font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 6px;">A股板块资金流与异动预警终端</div>
+        <div style="font-size: 12px; color: #64748b;">正在载入量化数据与核心看板，请稍候...</div>
+      </div>
+      <style>
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      </style>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

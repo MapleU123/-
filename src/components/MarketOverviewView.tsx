@@ -145,16 +145,17 @@ export const MarketOverviewView: React.FC<MarketOverviewViewProps> = ({
       {/* 1. Top Section: 8 Major Indices Cards + Macro Stats (Matching Screenshot Top) */}
       <section className="bg-white rounded-xl p-3.5 border border-slate-200/80 shadow-xs">
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-          {indices.map((idx) => {
+          {indices.map((idx, indexIdx) => {
             const isUp = (idx.change || 0) >= 0;
             const price = idx.price || 0;
             const changePercent = idx.changePercent || 0;
             const change = idx.change || 0;
+            const itemKey = idx.code ? `overview-idx-${idx.code}` : `overview-idx-${indexIdx}`;
 
             return (
               <div 
-                key={idx.code}
-                id={`overview-idx-${idx.code.split('.')[0]}`}
+                key={itemKey}
+                id={`overview-idx-${idx.code ? idx.code.split('.')[0] : indexIdx}`}
                 className="bg-slate-50/70 hover:bg-slate-100/80 p-2.5 rounded-lg border border-slate-200/60 transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div className="text-xs font-semibold text-slate-700 truncate mb-1">
@@ -251,7 +252,7 @@ export const MarketOverviewView: React.FC<MarketOverviewViewProps> = ({
             {onOpenExportImage && (
               <button
                 id="btn-breadth-export-img"
-                onClick={onOpenExportImage}
+                onClick={() => onOpenExportImage('market_overview')}
                 className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
                 title="导出今日盘面图片"
               >
@@ -403,11 +404,13 @@ export const MarketOverviewView: React.FC<MarketOverviewViewProps> = ({
                 const val = rankingMetric === 'percent' ? changePct : inflow;
                 const widthPercent = Math.min(100, Math.max(8, (Math.abs(val) / maxGainerVal) * 100));
                 const leadName = item.leadStock?.name;
+                const gainerKey = item.id ? `top-gainer-${item.id}` : `top-gainer-${item.name || (item as any).code || idx}-${idx}`;
+                const domId = `top-gainer-${item.id || item.name || idx}`;
 
                 return (
                   <div
-                    key={item.id}
-                    id={`top-gainer-${item.id}`}
+                    key={gainerKey}
+                    id={domId}
                     onClick={() => onSelectSector && onSelectSector(item.name)}
                     className="group relative flex items-center justify-between py-1.5 px-2.5 rounded-lg hover:bg-rose-50/50 cursor-pointer transition-colors"
                   >
@@ -482,11 +485,13 @@ export const MarketOverviewView: React.FC<MarketOverviewViewProps> = ({
                 const val = rankingMetric === 'percent' ? changePct : inflow;
                 const widthPercent = Math.min(100, Math.max(8, (Math.abs(val) / maxLoserVal) * 100));
                 const leadName = item.leadStock?.name;
+                const loserKey = item.id ? `top-loser-${item.id}` : `top-loser-${item.name || (item as any).code || idx}-${idx}`;
+                const domId = `top-loser-${item.id || item.name || idx}`;
 
                 return (
                   <div
-                    key={item.id}
-                    id={`top-loser-${item.id}`}
+                    key={loserKey}
+                    id={domId}
                     onClick={() => onSelectSector && onSelectSector(item.name)}
                     className="group relative flex items-center justify-between py-1.5 px-2.5 rounded-lg hover:bg-emerald-50/50 cursor-pointer transition-colors"
                   >

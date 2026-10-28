@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { SectorStock, AnomalyAlert, Level2OrderBook } from '../types/market';
 import { generateMockOrderBook } from '../data/mockMarketData';
-import { X, Sparkles, TrendingUp, TrendingDown, Layers, ShieldCheck, Activity } from 'lucide-react';
+import { X, Sparkles, TrendingUp, TrendingDown, Layers, ShieldCheck, Activity, BookmarkPlus } from 'lucide-react';
+import { AddToCustomSectorModal } from './AddToCustomSectorModal';
 
 interface StockDetailModalProps {
   stock: SectorStock | null;
@@ -26,6 +27,8 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
 
   const isUp = changePercent >= 0;
   const priceColor = isUp ? 'text-rose-400' : 'text-emerald-400';
+
+  const [isAddToCustomSectorOpen, setIsAddToCustomSectorOpen] = useState<boolean>(false);
 
   const [orderBook] = useState<Level2OrderBook>(() => generateMockOrderBook(price || 20.0));
   const [aiLoading, setAiLoading] = useState<boolean>(false);
@@ -101,12 +104,22 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setIsAddToCustomSectorOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 border border-rose-800/60 text-rose-300 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="收录至自定义板块进行资金流跟踪"
+            >
+              <BookmarkPlus className="w-3.5 h-3.5 text-rose-400" />
+              <span>加入自定义板块</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Level-2 5-tier Order Book */}
@@ -228,6 +241,13 @@ export const StockDetailModal: React.FC<StockDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Add To Custom Sector Modal */}
+      <AddToCustomSectorModal
+        isOpen={isAddToCustomSectorOpen}
+        onClose={() => setIsAddToCustomSectorOpen(false)}
+        stock={{ code, name, price, changePercent }}
+      />
     </div>
   );
 };
